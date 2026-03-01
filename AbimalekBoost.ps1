@@ -1,7 +1,7 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    OTIMIZADOR INTELIGENTE v4.0
+    AbimalekBoost
     Deteccao inteligente de hardware + otimizacoes especificas por CPU/GPU
 
 .NOTES
@@ -112,7 +112,6 @@ function Show-Banner {
     Write-Host ""
     Write-Host "  $linha" -ForegroundColor Cyan
     Write-Host "  ##  $($Script:NomeProg)  v$($Script:Versao)$((" "*([math]::Max(0,55-$Script:NomeProg.Length-$Script:Versao.Length)))  )##" -ForegroundColor Cyan
-    Write-Host "  ##  Inspirado no WinUtil do Chris Titus Tech$((" "*28))##" -ForegroundColor DarkCyan
     Write-Host "  $linha" -ForegroundColor Cyan
     Write-Host "  ID Sessao: $($Script:IDSessao)   |   $(Get-Date -f 'dd/MM/yyyy HH:mm')" -ForegroundColor DarkGray
     Write-Host ""
