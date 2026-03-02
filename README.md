@@ -41,7 +41,7 @@ Tudo é reversível — um backup completo é salvo antes de qualquer modificaç
 3. Cole o comando abaixo e pressione Enter:
 
 ```powershell
-powershell.exe -ExecutionPolicy Bypass -File "C:\caminho\AbimalekBoost_v4.ps1"
+powershell.exe -ExecutionPolicy Bypass -File "C:\caminho\AbimalekBoost.ps1"
 ```
 
 > **Dica:** Recomendado criar um Ponto de Restauração do Sistema antes de executar pela primeira vez.
