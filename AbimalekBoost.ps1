@@ -40,7 +40,7 @@ Clear-Host
 # ================================================================
 #  VARIAVEIS GLOBAIS
 # ================================================================
-$Script:Versao      = "4.0.0"
+$Script:Versao      = "4.0"
 $Script:NomeProg    = "AbimalekBoost"
 $Script:IDSessao    = (New-Guid).ToString("N").Substring(0,8).ToUpper()
 
