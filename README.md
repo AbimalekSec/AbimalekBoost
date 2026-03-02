@@ -1,4 +1,4 @@
-# ⚡ Abimalek Boost
+# ⚡ AbimalekBoost v4.0
 
 > Script PowerShell all-in-one para otimização de desempenho no Windows 10/11, com detecção automática de hardware e perfis inteligentes por CPU/GPU.
 
@@ -18,7 +18,7 @@
 
 ## 🧠 Sobre
 
-O **Otimizador Inteligente** é um script PowerShell focado em extrair o máximo de desempenho do seu sistema Windows, com foco em **gaming**, **streaming** e **workstation**. Ele detecta automaticamente seu hardware (CPU, GPU, RAM, disco) e aplica configurações específicas para cada combinação.
+O **AbimalekBoost** é um script PowerShell focado em extrair o máximo de desempenho do seu sistema Windows, com foco em **gaming**, **streaming** e **workstation**. Ele detecta automaticamente seu hardware (CPU, GPU, RAM, disco) e aplica configurações específicas para cada combinação.
 
 Tudo é reversível — um backup completo é salvo antes de qualquer modificação.
 
@@ -36,15 +36,15 @@ Tudo é reversível — um backup completo é salvo antes de qualquer modificaç
 
 ## 🚀 Como usar
 
-1. Baixe o arquivo `AbimalekBoos.ps1`
+1. Baixe o arquivo `AbimalekBoost_v4.ps1`
 2. Clique com o botão direito no PowerShell → **Executar como Administrador**
 3. Cole o comando abaixo e pressione Enter:
 
 ```powershell
-powershell.exe -ExecutionPolicy Bypass -File "C:\caminho\AbimalekBoost.ps1"
+powershell.exe -ExecutionPolicy Bypass -File "C:\caminho\AbimalekBoost_v4.ps1"
 ```
 
-> **Dica:** Para evitar erros de encoding, não renomeie o arquivo para nomes com acentos.
+> **Dica:** Recomendado criar um Ponto de Restauração do Sistema antes de executar pela primeira vez.
 
 ---
 
@@ -333,7 +333,7 @@ Para reverter **todas** as modificações:
 
 Os backups ficam salvos em:
 ```
-%LOCALAPPDATA%\OtimizadorInteligente\Backup\
+%LOCALAPPDATA%\AbimalekBoost\Backup\
 ```
 
 ---
