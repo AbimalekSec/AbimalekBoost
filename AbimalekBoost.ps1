@@ -1,7 +1,8 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
 .SYNOPSIS
-    AbimalekBoost
+    AbimalekBoost v4.0
+    Otimizador avancado de desempenho para Windows
     Deteccao inteligente de hardware + otimizacoes especificas por CPU/GPU
 
 .NOTES
@@ -31,11 +32,16 @@ Set-StrictMode -Off
 $ErrorActionPreference = 'SilentlyContinue'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
+# Fundo preto e texto padrao
+$host.UI.RawUI.BackgroundColor = 'Black'
+$host.UI.RawUI.ForegroundColor = 'White'
+Clear-Host
+
 # ================================================================
 #  VARIAVEIS GLOBAIS
 # ================================================================
 $Script:Versao      = "4.0.0"
-$Script:NomeProg    = "Abimalek Boost"
+$Script:NomeProg    = "AbimalekBoost"
 $Script:IDSessao    = (New-Guid).ToString("N").Substring(0,8).ToUpper()
 
 # Hardware
@@ -112,6 +118,7 @@ function Show-Banner {
     Write-Host ""
     Write-Host "  $linha" -ForegroundColor Cyan
     Write-Host "  ##  $($Script:NomeProg)  v$($Script:Versao)$((" "*([math]::Max(0,55-$Script:NomeProg.Length-$Script:Versao.Length)))  )##" -ForegroundColor Cyan
+    Write-Host "  ##  Otimizador avancado de desempenho para Windows 10/11$((" "*18))##" -ForegroundColor DarkCyan
     Write-Host "  $linha" -ForegroundColor Cyan
     Write-Host "  ID Sessao: $($Script:IDSessao)   |   $(Get-Date -f 'dd/MM/yyyy HH:mm')" -ForegroundColor DarkGray
     Write-Host ""
@@ -432,8 +439,6 @@ function Invoke-Privacidade {
         @{P="HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced";               N="Start_TrackProgs";                            V=0}
         # Diagnostico / apps
         @{P="HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\appDiagnostics"; N="Value";                  V="Deny"; T="String"}
-        @{P="HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone";     N="Value";                  V="Deny"; T="String"}
-        @{P="HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\webcam";         N="Value";                  V="Deny"; T="String"}
         # Feedback
         @{P="HKCU:\SOFTWARE\Microsoft\Siuf\Rules";                                             N="NumberOfSIUFInPeriod";                        V=0}
         @{P="HKCU:\SOFTWARE\Microsoft\Siuf\Rules";                                             N="PeriodInNanoSeconds";                         V=0}
@@ -467,8 +472,34 @@ function Invoke-Privacidade {
     OK "Cortana e pesquisa web desativados"
     OK "Recall (Windows AI) desativado"
     OK "$ok tweaks de privacidade aplicados"
-    $Script:TweaksFeitos.Add("Privacidade: $ok tweaks")
-    LOG "Privacidade: $ok tweaks"
+
+    # Microfone e webcam - pergunta separada pois afeta Discord, Zoom, etc.
+    Write-Host ""
+    WN "Atencao: Bloquear microfone e camera desativa o acesso de TODOS os apps"
+    WN "incluindo Discord, Zoom, Teams, OBS e outros."
+    Write-Host "  [1] Bloquear microfone e camera (mais privacidade)" -ForegroundColor White
+    Write-Host "  [2] Manter microfone e camera habilitados (recomendado para uso geral)" -ForegroundColor Yellow
+    Write-Host ""
+    $micOp = Read-Host "  Opcao [1/2]"
+    if ($micOp.Trim() -eq '1') {
+        try {
+            $micPath = "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone"
+            $camPath = "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\webcam"
+            if (-not (Test-Path $micPath)) { New-Item $micPath -Force | Out-Null }
+            if (-not (Test-Path $camPath)) { New-Item $camPath -Force | Out-Null }
+            Set-ItemProperty $micPath -Name "Value" -Value "Deny" -Type String -Force
+            Set-ItemProperty $camPath -Name "Value" -Value "Deny" -Type String -Force
+            OK "Microfone e camera bloqueados para todos os apps"
+            WN "Para reativar: Configuracoes > Privacidade > Microfone / Camera"
+            $Script:TweaksFeitos.Add("Privacidade: microfone e camera BLOQUEADOS")
+        } catch { ER "Falha ao bloquear microfone/camera" }
+    } else {
+        OK "Microfone e camera mantidos habilitados"
+        $Script:TweaksFeitos.Add("Privacidade: microfone e camera mantidos (habilitados)")
+    }
+
+    $Script:TweaksFeitos.Add("Privacidade: $ok tweaks de telemetria/anuncios")
+    LOG "Privacidade: $ok tweaks | Mic/Cam: $(if($micOp.Trim() -eq '1'){'BLOQUEADOS'}else{'mantidos'})"
 }
 
 # ================================================================
@@ -1636,7 +1667,7 @@ function Invoke-ExportarRelatorio {
     $relPath = Join-Path $Script:PastaRaiz "Relatorio_$(Get-Date -f 'yyyyMMdd_HHmmss').txt"
     $linhas  = @()
     $linhas += "=" * 70
-    $linhas += "  OTIMIZADOR INTELIGENTE v$($Script:Versao) - Relatorio de Sessao"
+    $linhas += "  AbimalekBoost v$($Script:Versao) - Relatorio de Sessao"
     $linhas += "  Sessao: $($Script:IDSessao)   Data: $(Get-Date -f 'dd/MM/yyyy HH:mm')"
     $linhas += "=" * 70
     $linhas += ""
@@ -1916,7 +1947,7 @@ function Show-MenuPrincipal {
 # ================================================================
 #  INICIALIZACAO
 # ================================================================
-LOG "=== OTIMIZADOR INTELIGENTE v$($Script:Versao) ==="
+LOG "=== AbimalekBoost v$($Script:Versao) ==="
 LOG "Sessao: $($Script:IDSessao) | Usuario: $env:USERNAME | Host: $env:COMPUTERNAME"
 LOG "Build Windows: $([System.Environment]::OSVersion.Version)"
 LOG "==="
