@@ -1,368 +1,329 @@
-# ⚡ AbimalekBoost v4.0
+<div align="center">
 
-> Script PowerShell all-in-one para otimização de desempenho no Windows 10/11, com detecção automática de hardware e perfis inteligentes por CPU/GPU.
+```
+ █████╗ ██████╗ ██╗███╗   ███╗ █████╗ ██╗     ███████╗██╗  ██╗
+██╔══██╗██╔══██╗██║████╗ ████║██╔══██╗██║     ██╔════╝██║ ██╔╝
+███████║██████╔╝██║██╔████╔██║███████║██║     █████╗  █████╔╝ 
+██╔══██║██╔══██╗██║██║╚██╔╝██║██╔══██║██║     ██╔══╝  ██╔═██╗ 
+██║  ██║██████╔╝██║██║ ╚═╝ ██║██║  ██║███████╗███████╗██║  ██╗
+╚═╝  ╚═╝╚═════╝ ╚═╝╚═╝     ╚═╝╚═╝  ╚═╝╚══════╝╚══════╝╚═╝  ╚═╝
+                    BOOST  v6.0
+```
 
----
+**Motor de IA Heurística para Windows 10/11**
 
-## 📋 Índice
+*Detecta hardware · Analisa gargalos · Decide o que otimizar · Mede o resultado*
 
-- [Sobre](#-sobre)
-- [Requisitos](#-requisitos)
-- [Como usar](#-como-usar)
-- [Funcionalidades](#-funcionalidades)
-- [O que é permanente](#-o-que-é-permanente)
-- [Restauração](#-restauração)
-- [Aviso legal](#-aviso-legal)
+[![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B-blue?logo=powershell)](https://github.com/PowerShell/PowerShell)
+[![Windows](https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?logo=windows)](https://www.microsoft.com/windows)
+[![Version](https://img.shields.io/badge/Versão-6.0.0-00FF88)](#)
+[![Tweaks](https://img.shields.io/badge/Tweaks-120-FF6B35)](#módulos)
+[![License](https://img.shields.io/badge/Licença-MIT-yellow)](#licença)
 
----
-
-## 🧠 Sobre
-
-O **AbimalekBoost** é um script PowerShell focado em extrair o máximo de desempenho do seu sistema Windows, com foco em **gaming**, **streaming** e **workstation**. Ele detecta automaticamente seu hardware (CPU, GPU, RAM, disco) e aplica configurações específicas para cada combinação.
-
-Tudo é reversível — um backup completo é salvo antes de qualquer modificação.
-
----
-
-## 📦 Requisitos
-
-- Windows 10 ou Windows 11
-- PowerShell 5.1 ou superior (já incluso no Windows)
-- **Executar como Administrador** (obrigatório)
-- Para instalação de programas: `winget` disponível (App Installer da Microsoft Store)
-- Para monitoramento e OC de GPU NVIDIA: `nvidia-smi` (incluso nos drivers NVIDIA)
+</div>
 
 ---
 
-## 🚀 Como usar
-
-1. Baixe o arquivo `AbimalekBoost_v4.ps1`
-2. Clique com o botão direito no PowerShell → **Executar como Administrador**
-3. Cole o comando abaixo e pressione Enter:
+## Execução rápida
 
 ```powershell
-powershell.exe -ExecutionPolicy Bypass -File "C:\caminho\AbimalekBoost.ps1"
+irm "https://raw.githubusercontent.com/AbimalekSec/AbimalekBoost/refs/heads/main/AbimalekBoost.ps1" | iex
 ```
 
-> **Dica:** Recomendado criar um Ponto de Restauração do Sistema antes de executar pela primeira vez.
+> **Requer PowerShell como Administrador.** Clique com botão direito no PowerShell → *Executar como administrador*.
 
 ---
 
-## ✅ Funcionalidades
+## O que é
 
-### 🔍 Detecção de Hardware Automática
-- CPU: nome, fabricante (AMD/Intel), núcleos físicos e lógicos, geração Intel, detecção de V-Cache X3D e série K
-- GPU: nome, VRAM, fabricante, versão do driver, temperatura e clock em tempo real (NVIDIA via nvidia-smi)
-- RAM: total, tipo (DDR3/4/5), velocidade em MHz, número de módulos e aviso de single-channel
-- Disco: nome, tipo (NVMe / SSD SATA / HDD) com detecção automática via WMI
-- Windows: versão e build number
-- winget: verifica disponibilidade automaticamente
+AbimalekBoost é um otimizador avançado de desempenho para Windows 10 e 11, executado **100% em memória** via PowerShell — sem instalação, sem servidor externo, sem IA paga.
+
+A versão 6.0 introduz o **Motor de IA Heurística**: em vez de aplicar um conjunto fixo de tweaks, o script analisa o hardware real da máquina, detecta gargalos, decide quais otimizações fazem sentido para aquele sistema específico e mede o resultado com score comparativo antes/depois.
+
+**Não é um script de tweaks estático. É um motor de decisão.**
 
 ---
 
-### ⚡ Módulo 1 — Plano de Energia Inteligente
-Configura o plano de energia ideal baseado no hardware ou no perfil escolhido:
-
-| Perfil | Indicado para |
-|---|---|
-| Gaming | Máxima performance, Ultimate Performance (Intel) ou AMD Ryzen Balanced |
-| Workstation | Performance + estabilidade térmica |
-| Equilibrado | Uso misto, padrão para CPUs AMD X3D |
-| Auto | O script decide baseado no hardware detectado |
-
-- Core Parking desativado (núcleos sempre disponíveis)
-- Boost agressivo ou Efficient Aggressive (X3D)
-- Sleep e monitor timeout desativados
-- Suporte a Intel 12ª geração+ (Alder Lake e acima) com gerenciamento correto de E-cores e P-cores
-- Opção de desativar Hibernate (libera GBs no SSD)
-
----
-
-### 🔒 Módulo 2 — Privacidade e Telemetria
-30+ tweaks de registro aplicados:
-
-- Telemetria e diagnóstico da Microsoft desativados
-- Anúncios personalizados bloqueados
-- Cortana e pesquisa web na barra de tarefas desativados
-- Sugestões e apps silenciosos bloqueados
-- Histórico de atividades (Timeline) desativado
-- Localização geográfica bloqueada para apps
-- Acesso de apps a microfone e câmera bloqueado
-- Windows Recall (IA) desativado (Windows 11 24H2)
-- OneDrive removido do startup
-- Feedback e relatórios de erros desativados
-
----
-
-### 🎮 Módulo 3 — Game Bar / Game Mode / HAGS
-- Xbox Game Bar desativado (libera CPU durante jogos)
-- Game Mode ativado (Windows prioriza o processo do jogo)
-- HAGS — Hardware Accelerated GPU Scheduling ativado
-- Multimedia Scheduler configurado com prioridade máxima para jogos
-- GPU Priority elevada para 8
-- Clock Rate do scheduler ajustado para 10.000
-
----
-
-### 🌐 Módulo 4 — Rede Avançada
-- **Nagle Algorithm** desativado (reduz latência em jogos online)
-- **TCP Stack** otimizado: TTL, MaxUserPort, Window Scaling, Timestamps
-- **Auto-Tuning** normal com DCA/NetDMA ativados e ECN desativado
-- **DNS com teste automático de latência**: testa Cloudflare, Google, Quad9 e OpenDNS e aplica o mais rápido
-- Reserva de 20% de banda do Windows liberada
-- NIC tweaks: Interrupt Moderation OFF, RSS ON, LSO OFF, Energy Efficient Ethernet OFF
-- **MSI Mode ativado na NIC** (Message Signaled Interrupts — reduz latência de IRQ)
-- Cache DNS limpo ao final
-
----
-
-### 🛠️ Módulo 5 — Serviços Desnecessários
-Desativa 24 serviços que consomem recursos sem utilidade para a maioria dos usuários:
-
-- DiagTrack (Telemetria)
-- Serviços Xbox Live (Auth, GameSave, Network API, Accessories)
-- Localização, Mapas Offline, Fax
-- Registro Remoto (risco de segurança)
-- WAP Push, Telefonia legada, Hotspot móvel
-- AllJoyn Router (IoT legado)
-- E outros
-
-Backup automático do estado original salvo antes de desativar qualquer serviço.
-
----
-
-### 🖥️ Módulo 6 — Visual e Performance
-- Todas as animações do Windows desativadas
-- Transparência desativada (menos uso de GPU em background)
-- Widgets e Chat da taskbar removidos
-- News e Interests desativados
-- Menu de contexto clássico restaurado no Windows 11
-- Delay de menu zerado
-- Extensões de arquivo e arquivos ocultos visíveis
-- Prefetch mantido para SSD/NVMe (melhora carregamento de jogos)
-
----
-
-### 💾 Módulo 7 — NTFS e I/O Avançado
-- **Last Access Time** desativado (reduz writes desnecessários no disco)
-- **Criptografia do PageFile** desativada
-- **Nomes curtos 8.3** desativados (melhora velocidade do Explorer em pastas grandes)
-- NVMe: Write Cache Buffer Flushing ativado
-- NVMe: StorNVMe Command Spreading desativado (reduz latência)
-- I/O Timeout otimizado para SSD/NVMe
-- Network Throttling desativado para jogos
-
----
-
-### ⏱️ Módulo 8 — Timer Resolution
-- **Dynamic Tick** desativado via BCD (timer mais consistente = FPS mais estável)
-- **Platform Tick** ativado
-- Platform Clock verificado e desativado se causar stuttering (Windows 11 22H2+)
-- System Responsiveness ajustado para 0% (CPU 100% focada no primeiro plano)
-- Backup do estado BCD salvo antes de modificar
-
----
-
-### 🔌 Módulo 9 — MSI Mode (GPU + NVMe)
-- **Message Signaled Interrupts** ativado para GPU e NVMe
-- Elimina conflitos de IRQ entre dispositivos PCIe
-- GPU com prioridade High configurada no gerenciador de interrupções
-- Reduz latência de resposta da GPU durante jogos
-
-> Requer reinicialização para ter efeito.
-
----
-
-### 🔵 Módulo 10 — Otimizações AMD X3D V-Cache
-Ativado automaticamente quando CPU com V-Cache é detectada:
-
-- AMD Ryzen Balanced obrigatoriamente ativado
-- Boost: Efficient Aggressive (ideal para latência do cache 3D)
-- Core Parking OFF
-- Transições de frequência rápidas
-- Instruções para BIOS (CPPC Preferred Cores, Cool'n'Quiet, C-state, XMP/EXPO, PBO desativado)
-
----
-
-### 🎯 Módulo 11 — Analisador de Overclock de GPU
-Banco de dados com **40+ modelos de GPU** (NVIDIA e AMD):
-
-- RTX 4090 até GTX 1050 Ti
-- RX 7900 XTX até RX 5600 XT
-- Intel Arc A770/A750
-
-Para cada GPU fornece:
-
-| Perfil | Core OC | Mem OC | Power Limit |
-|---|---|---|---|
-| Conservador | Seguro para começar | Seguro | +5 a +8% |
-| Moderado | Estável na maioria | Bom ganho | +8 a +12% |
-| Agressivo | Máximo do modelo | Máximo | +10 a +15% |
-
-- Análise térmica em tempo real (15 segundos com gráfico ASCII)
-- Power Limit aplicado automaticamente via nvidia-smi (NVIDIA)
-- Configuração de frequência mínima do core (evita stutter em menus)
-- Guia passo a passo para MSI Afterburner / AMD Adrenalin
-
----
-
-### 📺 Módulo 12 — Modo Streamer
-Configura o sistema para rodar jogo + OBS simultaneamente sem drops:
-
-- OBS64 com CPU Priority = High
-- HAGS ativado (necessário para encode via GPU no OBS)
-- Pro Audio scheduler configurado (sem drops de áudio)
-- System Responsiveness ajustado para 10% (divide CPU entre jogo e encoder)
-- Recomendações de configuração do OBS incluídas (encoder, bitrate, keyframe)
-
----
-
-### 📊 Módulo 13 — Monitor em Tempo Real
-Monitor ao vivo no terminal com atualização a cada segundo:
+## Como funciona — 4 fases
 
 ```
-[14:32:05] CPU:  47% | RAM: 58% (9.2/16GB) | GPU: 61C/94% VRAM:7.1/8GB W:182
-```
-
-- CPU: uso percentual com código de cor (verde/amarelo/vermelho)
-- RAM: uso em GB e percentual
-- GPU: temperatura, utilização, VRAM usada/total, consumo em watts (requer nvidia-smi)
-
----
-
-### 🗑️ Módulo 14 — Debloater
-Remove **60+ aplicativos** desnecessários do Windows:
-
-- Apps Xbox (mantém apenas o runtime necessário para jogos)
-- Cortana standalone
-- Apps Bing (Weather, Finance, News, Sports, Translator)
-- Skype, Teams, People, Alarms, Maps, FeedbackHub
-- Bloatware de terceiros: TikTok, Instagram, Facebook, CandyCrush, Netflix, Roblox
-- Copilot standalone, Family Safety, Mail antigo, 3D Builder
-- Bloqueia reinstalação automática pelo Windows
-
----
-
-### 📥 Módulo 15 — Instalador de Programas
-Instala aplicativos via winget com seleção numérica:
-
-| Categoria | Programas |
-|---|---|
-| Navegadores | Chrome, Firefox, Brave, Opera |
-| Comunicação | Discord, WhatsApp, Telegram, Zoom |
-| Gaming | Steam, Epic Games, Ubisoft Connect, EA App |
-| Utilitários | 7-Zip, Notepad++, VLC, qBittorrent, Malwarebytes, HWiNFO64, CrystalDiskInfo, CPU-Z |
-| GPU/OC | MSI Afterburner, RivaTuner Statistics |
-| Dev | Git, VS Code, Python 3.12, Node.js LTS |
-| Multimedia | OBS Studio, GIMP, HandBrake |
-| Office | LibreOffice, Adobe Acrobat Reader |
-
----
-
-### 🔄 Módulo 16 — Controle do Windows Update
-- Pausar atualizações por 35 dias (recomendado para gamers)
-- Habilitar atualizações automáticas
-- Bloquear permanentemente (com aviso de riscos)
-- Forçar verificação de atualizações imediata
-
----
-
-### 🔧 Módulo 17 — Reparar Windows
-- `DISM /RestoreHealth` — repara a imagem do Windows
-- `SFC /scannow` — verifica e repara arquivos de sistema corrompidos
-- Reset de Winsock e pilha TCP/IP (opcional)
-- Cache DNS limpo ao final
-
----
-
-### 🧹 Módulo 18 — Limpeza do Sistema
-- Pastas temporárias (`%TEMP%`, `C:\Windows\Temp`, INetCache)
-- Cache do Windows Update (SoftwareDistribution)
-- Lixeira esvaziada
-- Logs antigos do Event Viewer (acima de 1.000 entradas) removidos
-- Cache de thumbnails do Explorer removido
-
----
-
-### 📄 Módulo 19 — Exportar Relatório
-Gera um arquivo `.txt` com:
-- Hardware detectado (CPU, GPU, RAM, Disco, SO)
-- Lista completa de tweaks aplicados na sessão
-- Caminho do log completo
-
-Salvo em `%LOCALAPPDATA%\AbimalekBoost\`
-
----
-
-### ↩️ Módulo 20 — Restaurar Configurações Originais
-Reverte **tudo** que foi modificado:
-- Plano de energia original restaurado via GUID salvo
-- Serviços reativados com seus tipos de inicialização originais
-- Tweaks de rede (Nagle, TCP) removidos
-- Políticas de telemetria e Cortana removidas
-- Efeitos visuais e transparência restaurados
-- BCD revertido ao estado pré-otimização
-
----
-
-## 💾 O que é permanente
-
-| Configuração | Permanente? | Observação |
-|---|---|---|
-| Tweaks de registro | ✅ Sim | Persiste até restaurar |
-| Plano de energia | ✅ Sim | Salvo no Windows |
-| Serviços desativados | ✅ Sim | StartType = Disabled |
-| NTFS (fsutil) | ✅ Sim | Nível de sistema de arquivos |
-| BCD (Dynamic Tick) | ✅ Sim | Gravado no bootloader |
-| DNS configurado | ✅ Sim | Por adaptador de rede |
-| MSI Mode | ✅ Sim | Após reinicialização |
-| Debloater | ✅ Sim | Apps removidos ficam removidos |
-| Power Limit nvidia-smi | ❌ Não | Reseta ao reiniciar — use Afterburner |
-| Frequência mínima GPU | ❌ Não | Reseta ao reiniciar |
-| Flush de DNS | ❌ Não | Limpeza pontual de cache |
-
----
-
-## 🔙 Restauração
-
-Para reverter **todas** as modificações:
-
-1. Execute o script como Administrador
-2. Escolha a opção **[5] Restaurar Configurações Originais**
-3. Reinicie o computador
-
-Os backups ficam salvos em:
-```
-%LOCALAPPDATA%\AbimalekBoost\Backup\
+┌─────────────────────────────────────────────────────────────────┐
+│                                                                  │
+│  [FASE 1] COLETA              [FASE 2] DECISÃO                  │
+│  ───────────────────           ─────────────────────            │
+│  CPU uso%                      Detecta gargalos:                │
+│  RAM uso% + livre              · CPU-bound                      │
+│  Disk Queue Length             · RAM-limitada                   │
+│  Ping ×5 + jitter              · IO-limitado                    │
+│  Timer resolution              · Rede-instável                  │
+│  TCP autotuning                · GPU-bound                      │
+│  Core parking                  Seleciona regras                 │
+│  Plano de energia              por perfil e condição            │
+│  Top 8 processos               Ordena por prioridade            │
+│                                                                  │
+│  [FASE 3] APLICAÇÃO           [FASE 4] SCORE + APRENDIZADO      │
+│  ──────────────────            ───────────────────────────      │
+│  Ponto de restauração          Score Geral      (0–100)         │
+│  Backup de registro            Score Latência   (0–100)         │
+│  Aplica por prioridade         Score Responsiv. (0–100)         │
+│  Erro por regra isolado        Score Gamer      (0–100)         │
+│                                Salva em JSON local              │
+│                                Interface WPF antes/depois       │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## ⚠️ Aviso Legal
+## Perfis de otimização
 
-- Este script modifica configurações do sistema operacional. Use por sua conta e risco.
-- Todas as alterações são reversíveis via opção de restauração.
-- Recomendado criar um **Ponto de Restauração do Sistema** antes de executar.
-- Não são feitas modificações em arquivos de sistema, apenas em registro, serviços e configurações do Windows.
-- O script **não instala drivers**, não modifica o bootloader de forma permanente sem confirmação e não faz overclock de hardware automaticamente.
+| Perfil | Para quem | O que inclui |
+|--------|-----------|--------------|
+| 🟢 **Seguro** | Primeiro uso, uso geral | Plano de energia, Timer, Nagle OFF, TCP, Telemetria, NTFS |
+| 🟡 **Gamer** | Gaming competitivo, uso diário | + Mouse 1:1, IRQ, MMCSS, QoS gaming, Background apps, RAM clear |
+| 🔵 **Streamer** | Gaming + OBS simultâneo | + Prioridade OBS, afinidade de CPU, rede para streaming |
+| 🔴 **Extremo** | PC dedicado a gaming | + Spectre/Meltdown OFF, C-States OFF, Memory Compression OFF |
 
----
-
-## 📁 Estrutura de arquivos gerados
-
-```
-%LOCALAPPDATA%\AbimalekBoost\
-├── Backup\
-│   ├── plano.txt          ← GUID do plano de energia original
-│   ├── servicos.json      ← Estado original dos serviços
-│   └── bcd.txt            ← Flag de tweaks BCD aplicados
-├── Logs\
-│   └── v4_XXXXXXXX_*.log  ← Log completo da sessão
-└── Relatorio_*.txt        ← Relatório exportado (se solicitado)
-```
+> ⚠️ **Perfil Extremo** desativa mitigações de segurança do CPU. Use apenas em PCs dedicados a gaming sem dados sensíveis.
 
 ---
 
-## 📜 Licença
+## Módulos
 
-MIT License — livre para usar, modificar e distribuir.
+| Módulo | Tweaks | Risco | O que faz |
+|--------|:------:|:-----:|-----------|
+| Plano de Energia | 8 | 🟢 Baixo | Ultimate Performance, core parking, turbo boost, SpeedStep, C-States, PCIe ASPM |
+| Privacidade / Telemetria | 7 | 🟢 Baixo | Desativa coleta de dados, feedback, CEIP, localização, anúncios, Activity History |
+| Game Bar / Game Mode | 5 | 🟢 Baixo | Game Bar, Game Mode, HAGS (Hardware GPU Scheduling), DVR, overlay |
+| Otimização de Rede | 11 | 🟢 Baixo | TCP stack, Nagle OFF, QoS, buffer, autotuning, DNS, timestamps, checksum offload |
+| Serviços Desnecessários | 7 | 🟢 Baixo | Para e desativa serviços que consomem CPU/RAM sem benefício para gaming |
+| Visual e Performance | 7 | 🟢 Baixo | Animações, transparência, efeitos visuais, widgets, menu contexto Win11 |
+| NTFS e I/O | 8 | 🟢 Baixo | LastAccess OFF, 8.3 names OFF, MFT zone, write cache, TRIM |
+| Timer Resolution | 5 | 🟡 Médio | Scheduler preciso, platform tick, dynamic tick, BCD (adaptativo Win10/Win11) |
+| MSI Mode | 2 | 🟡 Médio | Message Signaled Interrupts para GPU e NIC — reduz latência de interrupção |
+| Tweaks de CPU | 7 | 🟡 Médio | Affinity, SpeedStep, QoS por processo, C-States, prioridade foreground |
+| Tweaks de Memória | 5 | 🟡 Médio | Large Pages, prefetch avançado, Working Set clear, pagefile, compressão |
+| Tweaks de GPU | 6 | 🟡 Médio | TDR Delay, PhysX CPU, shader cache, CUDA, driver threading, DX12 |
+| Tweaks de Áudio | 4 | 🟢 Baixo | WASAPI exclusive, buffer mínimo, DPC latency, MMCSS de áudio |
+| 💥 Nuclear Microsoft | 9 | 🟡 Médio | Remove OneDrive, Copilot, Teams, Recall, Cortana, Edge autostart, Search, Widgets |
+| Processos CPU/RAM | 10 | 🟡 Médio | Kill processos pesados, Xbox services, Print Spooler, Working Set clear, startup |
+| Input Lag | 11 | 🟡 Médio | Mouse 1:1, IRQ priority, USB power, QoS jogos, MMCSS, DWM overlay, teclado |
+| Group Policy Pack | 16 | 🟡 Médio | 16 políticas via registro — funciona no **Windows Home** sem gpedit |
+
+**Total: 120 tweaks em 17 módulos.**
+
+---
+
+## Sistema de Score
+
+O score é calculado com métricas reais coletadas antes e depois de otimizar:
+
+```
+Score Geral = (Latência × 30%) + (Responsividade × 35%) + (Gamer × 35%)
+```
+
+| Dimensão | O que penaliza o score |
+|----------|------------------------|
+| **Latência** | Ping alto, jitter, Nagle ativo, TCP não otimizado, timer resolution ruim |
+| **Responsividade** | CPU > 60%, RAM > 70%, Disk Queue > 1.0, paginação ativa, core parking ligado |
+| **Gamer** | Plano errado, SysMain ativo em HDD, serviços em excesso, MMCSS padrão |
+
+Hardware premium gera bônus no Score Gamer: CPU X3D `+5` · DDR5 `+5` · NVMe `+5` · GPU ≥ 8 GB `+5`
+
+---
+
+## Regras do Motor de IA
+
+O motor seleciona otimizações com base em **condições medidas em tempo real**:
+
+| Regra | Condição de ativação | Prioridade |
+|-------|---------------------|:----------:|
+| Plano Ultimate Performance | Plano atual ≠ Ultimate | 🔴 Crítico |
+| Core Parking OFF | Core parking ativo detectado | 🔴 Crítico |
+| Timer Resolution | Timer medido > 3ms | 🔴 Crítico |
+| Nagle Algorithm OFF | Nagle ativo na interface de rede | 🔴 Crítico |
+| MMCSS Gaming | Configuração padrão ausente | 🟠 Alto |
+| Network Throttle OFF | Throttle de rede ativo | 🟠 Alto |
+| SysMain OFF | Disco = HDD **ou** RAM ≤ 8 GB | 🟠 Alto |
+| Power Throttling OFF | Sempre (Win throttle em background) | 🟠 Alto |
+| Mouse Aceleração OFF | Sempre | 🟠 Alto |
+| TCP Stack | Sempre (TTL, MaxUserPort, scaling) | 🟠 Alto |
+| Background Apps OFF | CPU > 30% **ou** RAM > 60% | 🟡 Médio |
+| Telemetria OFF | DiagTrack ativo | 🟡 Médio |
+| Windows Error Reporting OFF | Sempre | 🟡 Médio |
+| IRQ Priority Input | Mouse/teclado com baixa IRQ | 🟡 Médio |
+| NTFS Performance | Sempre (LastAccess + 8.3 names) | 🟡 Médio |
+| RAM Working Set Clear | RAM uso > 65% | 🟡 Médio |
+| QoS Gaming | Sempre (CS2, Valorant, Apex, etc.) | 🟡 Médio |
+| OBS Prioridade | Perfil = Streamer | 🟠 Alto |
+| Spectre/Meltdown OFF | Perfil = Extremo | ⚫ Extremo |
+| C-States OFF | Perfil = Extremo | ⚫ Extremo |
+
+---
+
+## Win10 vs Win11 — diferenças automáticas
+
+O script detecta a versão do Windows na inicialização (`build ≥ 22000 = Win11`) e aplica tweaks diferentes para cada uma:
+
+| Tweak | Windows 10 | Windows 11 |
+|-------|-----------|-----------|
+| `Win32PrioritySeparation` | `0x26` — quantum curto com boost | `2` — sem stutter no scheduler moderno |
+| `useplatformtick` (BCD) | `YES` — melhora timer no Win10 | Removido — causa stutter no Win11 22H2+ |
+| `disabledynamictick` | `YES` | `YES` |
+| Copilot / Recall / Widgets | Ignorado — não existe no Win10 | Aplicado normalmente |
+| Auto HDR / VRR | Ignorado — exclusivo Win11 | Desativado para menor overhead |
+| SysMain | Desativa só em HDD ou RAM ≤ 8 GB | Desativa só em HDD ou RAM ≤ 8 GB |
+
+---
+
+## Ferramentas extras
+
+**🎮 Simulação de impacto por jogo**
+Estima ganho de FPS e input lag antes de otimizar, com análise de hardware específica para cada engine:
+- **FiveM** — gargalo: CPU single-core + RAM bandwidth
+- **CS2** — gargalo: latência de rede + mouse input lag + timer
+- **Valorant** — gargalo: CPU scheduler + network + VRAM
+
+**📊 Monitor de Hardware em tempo real**
+CPU, RAM, temperatura de GPU e disco em loop no terminal, atualizado a cada 2 segundos.
+
+**🖥️ Analisador de GPU / Overclock**
+Lê temperatura, clock core, power limit e VRAM via `nvidia-smi`. Sugere perfil de OC baseado nos dados.
+
+**🎙️ Modo Streamer**
+Prioridade `AboveNormal` para OBS, afinidade de CPU dividida entre jogo e encoder, MMCSS ajustado para encoding sem drops.
+
+**⚡ Otimizações X3D V-Cache**
+Para AMD 5800X3D, 7800X3D, 9800X3D: desativa PBO, ajusta Curve Optimizer, força scheduler a usar núcleos com V-Cache primeiro.
+
+**🧹 Debloater**
+Remove apps pré-instalados do Windows com checklist de seleção.
+
+**📦 Instalador via Winget**
+Instala Chrome, Discord, Steam, OBS, 7-Zip e outros pelo repositório oficial da Microsoft.
+
+**🔧 Reparar Windows**
+Executa `SFC /scannow` e `DISM /RestoreHealth` com log de resultado.
+
+---
+
+## Segurança e reversibilidade
+
+Toda sessão cria **3 camadas de proteção** antes de qualquer alteração:
+
+```
+1. Ponto de Restauração do Sistema
+   └── criado via Checkpoint-Computer antes da primeira alteração
+
+2. Backup de Registro
+   └── exportado em .reg com timestamp
+   └── %LOCALAPPDATA%\AbimalekBoost\Backup\reg_ia_YYYYMMDD_HHMMSS.reg
+
+3. Log de Sessão
+   └── cada tweak registrado com resultado
+   └── %LOCALAPPDATA%\AbimalekBoost\Logs\
+```
+
+Para reverter tudo: menu **Restaurar**.
+Para rollback granular: **Motor de IA → Rollback de Registro** → selecione o backup por data.
+
+---
+
+## Aprendizado local
+
+O sistema mantém histórico de sessões em JSON local — **zero dados enviados para servidores**:
+
+```
+%LOCALAPPDATA%\AbimalekBoost\ia_historico.json
+```
+
+Cada sessão registra: data, perfil, hardware, score antes/depois, ganho, ping, RAM e tweaks aplicados. Na próxima execução, o motor exibe ganho médio histórico e recomenda o perfil mais eficiente para aquele hardware.
+
+---
+
+## Navegação no menu
+
+```
+Menu Principal
+├── [1] Otimização do Sistema     tweaks granulares por módulo (checklist)
+├── [2] Motor de IA v6.0          análise inteligente completa
+├── [3] Ferramentas               debloater, instalador, monitor, reparar
+├── [A] Aplicar Tudo              modo rápido com padrões recomendados
+├── [R] Restaurar                 reverter todas as otimizações
+└── [I] Informações do Hardware   exibe detecção completa
+
+Motor de IA
+├── [1] Executar com seleção de perfil
+├── [2] Perfil Seguro
+├── [3] Perfil Gamer
+├── [4] Perfil Streamer
+├── [5] Perfil Extremo
+├── [S] Simulação por jogo  (FiveM / CS2 / Valorant)
+├── [H] Histórico de aprendizado
+└── [R] Rollback de registro IA
+
+Checklist de tweaks (em qualquer módulo)
+├── [número]  marcar/desmarcar tweak individual
+├── [A]       marcar todos
+├── [N]       desmarcar todos
+├── [ENTER]   aplicar os marcados
+└── [V]       voltar sem aplicar
+```
+
+> Tweaks de risco **ALTO** aparecem desmarcados por padrão. Tweaks **MÉDIO** e **BAIXO** vêm marcados.
+
+---
+
+## Avisos
+
+> 🔄 **Reinicie após aplicar.** Tweaks de BCD e registro de kernel só entram em vigor no próximo boot.
+
+> 🔑 **Execute como Administrador.** Sem privilégio elevado os tweaks falham silenciosamente.
+
+> 🛡️ **Antivírus pode bloquear.** Adicione `raw.githubusercontent.com` como exceção se necessário.
+
+> 📖 **Leia a descrição de cada tweak.** O checklist mostra nome, descrição e risco antes de aplicar.
+
+---
+
+## Changelog
+
+### v6.0 — Motor de IA Heurística
+- Motor de IA com 20 regras condicionais por hardware/gargalo
+- Score 4D: Geral, Latência, Responsividade e Gamer (0–100)
+- Perfis: Seguro, Gamer, Streamer, Extremo
+- Coleta de métricas em tempo real (CPU, RAM, Disk Queue, Ping, Timer)
+- Aprendizado local em JSON — histórico de sessões sem servidor externo
+- Interface WPF com comparativo antes/depois e delta colorido
+- Simulação de impacto para FiveM, CS2 e Valorant
+- Ponto de restauração + backup de registro automático por sessão
+- Detecção automática Win10 vs Win11 com tweaks adaptativos
+- `Win32PrioritySeparation` adaptativo: `0x26` no Win10, `2` no Win11
+- `useplatformtick`: YES no Win10, removido no Win11 (evita stutter)
+- Tweaks Win11-only ignorados automaticamente no Win10
+- `SysMain` condicional: desativa só em HDD ou RAM ≤ 8 GB
+- Checklist: tweaks de risco ALTO desmarcados por padrão
+
+### v5.1 — Novos módulos de performance
+- Nuclear Microsoft: OneDrive, Copilot, Teams, Recall, Cortana, Edge, Search, Widgets
+- Processos CPU/RAM: kill de processos pesados, Xbox, Print Spooler, Working Set clear
+- Input Lag: mouse 1:1, IRQ priority, USB power, QoS, DWM overlay, MMCSS
+- Group Policy Pack: 16 políticas via registro (funciona no Windows Home)
+
+### v5.0 — IA Advisor + Checklist granular
+- Sistema de checklist tweak por tweak em todos os módulos
+- Módulos: CPU avançado, Memória, GPU, Áudio
+- Tweaks de Spectre/Meltdown, paginação, Large Pages
+
+---
+
+## Licença
+
+MIT — use, modifique e distribua livremente com atribuição.
+
+---
+
+<div align="center">
+<b>AbimalekBoost v6.0</b> · Motor de IA Heurística · Windows 10/11<br>
+4.679 linhas · 120 tweaks · 17 módulos · 0 servidores externos
+</div>
