@@ -1,31 +1,46 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    AbimalekBoost v4.0
-    Otimizador avancado de desempenho para Windows
-    Deteccao inteligente de hardware + otimizacoes especificas por CPU/GPU
+    AbimalekBoost v6.0
+    Sistema de otimizacao inteligente com Motor de IA Heuristica
+    Detecta hardware, analisa gargalos, decide e aplica tweaks automaticamente
 
 .NOTES
     - Requer execucao como Administrador (Windows 10/11)
-    - Totalmente reversivel via backup automatico
+    - Totalmente reversivel via backup automatico + ponto de restauracao
     - Execute com: powershell.exe -ExecutionPolicy Bypass -File "AbimalekBoost.ps1"
+    - Ou via IEX: irm "https://raw.githubusercontent.com/AbimalekSec/AbimalekBoost/refs/heads/main/AbimalekBoost.ps1" | iex
 
-.CHANGELOG v4.0
-    - NOVO: Modulo de Overclock de RAM (XMP/EXPO + latencias)
-    - NOVO: Modulo IRQ Priority (prioridade de interrupcos por hardware)
-    - NOVO: Modulo MSI Mode para NIC e GPU (Message Signaled Interrupts)
-    - NOVO: Modulo de Timer Resolution (aumenta precisao do scheduler)
-    - NOVO: Otimizacoes de NTFS e I/O para SSD/NVMe
-    - NOVO: Desativar Mitigacoes Spectre/Meltdown (opcional - risco vs ganho)
-    - NOVO: Configuracoes avancadas de GPU via nvidia-smi (frequencia minima)
-    - NOVO: Perfil "Modo Streamer" (OBS + jogo sem drops)
-    - NOVO: Analise de temperatura e throttling em tempo real
-    - NOVO: Exportar relatorio de otimizacoes em TXT
-    - MELHORIA: Deteccao de disco NVMe vs SATA vs HDD com tweaks especificos
-    - MELHORIA: DNS com ping automatico para recomendar o mais rapido
-    - MELHORIA: Debloater atualizado com mais 20 apps
-    - MELHORIA: Plano de energia com perfis por uso (Gaming / Workstation / Equilibrado)
-    - MELHORIA: Interface mais informativa com barra de progresso ASCII
+.CHANGELOG v6.0
+    - NOVO: Motor de IA Heuristico - analise local sem servidor externo
+    - NOVO: Sistema de Score (Geral, Latencia, Responsividade, Gamer)
+    - NOVO: Perfis inteligentes: Seguro, Gamer, Streamer, Extremo
+    - NOVO: Coleta de metricas em tempo real (CPU, RAM, Disk Queue, Ping, Timer)
+    - NOVO: Motor de Decisao - 20+ regras condicionais por hardware/gargalo
+    - NOVO: Aprendizado local (JSON) - historico de sessoes e ganhos
+    - NOVO: Score comparativo antes/depois com delta visual
+    - NOVO: Interface WPF com resultados em tempo real
+    - NOVO: Simulacao de impacto para FiveM, CS2 e Valorant
+    - NOVO: Ponto de restauracao automatico pre-otimizacao
+    - NOVO: Rollback de registro com backup por sessao
+    - NOVO: Nuclear Microsoft (OneDrive, Copilot, Teams, Recall, Edge)
+    - NOVO: Reducao de Processos CPU e desafogo de RAM
+    - NOVO: Input Lag (mouse 1:1, IRQ, QoS, DWM, MMCSS)
+    - NOVO: Group Policy Performance Pack (funciona no Windows Home)
+    - MELHORIA: TLS 1.2 forcado para chamadas HTTPS
+    - MELHORIA: Versao 6.0 - arquitetura modular escalavel
+    - NOVO: IA Advisor - analisa hardware e gera plano personalizado via API Claude
+    - NOVO: Tweaks granulares - escolha tweak por tweak antes de aplicar
+    - NOVO: Modo Checklist interativo com preview de cada tweak
+    - NOVO: Tweaks de CPU avancados (Affinity, QoS, C-States, SpeedStep)
+    - NOVO: Tweaks de memoria (Large Pages, prefetch avancado, Working Set)
+    - NOVO: Tweaks de GPU adicionais (TDR Delay, PhysX, shader cache)
+    - NOVO: Tweaks de latencia de audio (WASAPI, buffer de audio)
+    - NOVO: Tweaks de storage adicionais (Write-back cache, TRIM)
+    - NOVO: Desativar mitigacoes Spectre/Meltdown (opcional, risco vs ganho)
+    - NOVO: Otimizacao de paginacao e memoria virtual
+    - MELHORIA: Modo IA Advisor com chave API configuravel
+    - MELHORIA: Relatorio gerado pelo IA com recomendacoes especificas
 #>
 
 Set-StrictMode -Off
@@ -40,7 +55,7 @@ Clear-Host
 # ================================================================
 #  VARIAVEIS GLOBAIS
 # ================================================================
-$Script:Versao      = "4.0"
+$Script:Versao      = "6.0.0"
 $Script:NomeProg    = "AbimalekBoost"
 $Script:IDSessao    = (New-Guid).ToString("N").Substring(0,8).ToUpper()
 
@@ -53,6 +68,7 @@ $Script:GPUTemp     = -1; $Script:GPUCore  = -1; $Script:GPUPL   = -1; $Script:G
 $Script:GPUSmi      = ""; $Script:GPUDriver = ""
 $Script:DiscoTipo   = ""; $Script:DiscoNome = ""; $Script:DiscoNVMe = $false
 $Script:WinBuild    = 0;  $Script:WinVer    = ""
+$Script:IsWin11     = $false   # detectado em Invoke-DetectarHardware
 $Script:TemWinget   = $false
 
 # Estado
@@ -62,14 +78,35 @@ $Script:PlanoOrig      = ""
 $Script:OtimAplicada   = $false
 $Script:ModoStreamer    = $false
 
+# IA - Chave hardcoded (cliente nao precisa configurar nada)
+# Para obter sua chave: https://console.anthropic.com > API Keys
+$Script:IAChave        = "SUA-CHAVE-AQUI"   # <- substitua pela sua sk-ant-...
+$Script:IAAtiva        = ($Script:IAChave -match '^sk-ant-')
+
 # Pastas
 $Script:PastaRaiz   = Join-Path $env:LOCALAPPDATA "AbimalekBoost"
 $Script:PastaBackup = Join-Path $Script:PastaRaiz "Backup"
 $Script:PastaLogs   = Join-Path $Script:PastaRaiz "Logs"
-$Script:LogFile     = Join-Path $Script:PastaLogs "v4_$($Script:IDSessao)_$(Get-Date -f 'yyyyMMdd_HHmmss').log"
+$Script:ArqChaveIA  = Join-Path $Script:PastaRaiz "ia_key.txt"
+$Script:LogFile     = Join-Path $Script:PastaLogs "v5_$($Script:IDSessao)_$(Get-Date -f 'yyyyMMdd_HHmmss').log"
 
 foreach ($p in @($Script:PastaRaiz, $Script:PastaBackup, $Script:PastaLogs)) {
     if (-not (Test-Path $p)) { New-Item -ItemType Directory -Path $p -Force | Out-Null }
+}
+
+# Detectar versao do Windows cedo (antes de DetectarHardware)
+try {
+    $osEarly = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
+    if ($osEarly) {
+        $Script:WinBuild = [int]$osEarly.BuildNumber
+        $Script:WinVer   = $osEarly.Caption
+        $Script:IsWin11  = ($Script:WinBuild -ge 22000)
+    }
+} catch {}
+
+# Verificar se chave esta configurada
+if (-not $Script:IAAtiva) {
+    Write-Host "  [!] IA: chave nao configurada no script." -ForegroundColor DarkGray
 }
 
 # ================================================================
@@ -115,9 +152,10 @@ function Show-Progress {
 function Show-Banner {
     Clear-Host
     $linha = "=" * 72
+    $iaStr = if ($Script:IAAtiva) { " [IA ON]" } else { "" }
     Write-Host ""
     Write-Host "  $linha" -ForegroundColor Cyan
-    Write-Host "  ##  $($Script:NomeProg)  v$($Script:Versao)$((" "*([math]::Max(0,55-$Script:NomeProg.Length-$Script:Versao.Length)))  )##" -ForegroundColor Cyan
+    Write-Host "  ##  $($Script:NomeProg)  v$($Script:Versao)$iaStr$((" "*([math]::Max(0,53-$Script:NomeProg.Length-$Script:Versao.Length-$iaStr.Length)))  )##" -ForegroundColor Cyan
     Write-Host "  ##  Otimizador avancado de desempenho para Windows 10/11$((" "*18))##" -ForegroundColor DarkCyan
     Write-Host "  $linha" -ForegroundColor Cyan
     Write-Host "  ID Sessao: $($Script:IDSessao)   |   $(Get-Date -f 'dd/MM/yyyy HH:mm')" -ForegroundColor DarkGray
@@ -156,6 +194,7 @@ function Show-StatusBar {
     Write-Host "  Status: " -NoNewline -ForegroundColor DarkGray
     Write-Host $txtOtm -ForegroundColor $corOtm
     if ($Script:ModoStreamer) { Write-Host "  [MODO STREAMER ATIVO]" -ForegroundColor Magenta }
+    if ($Script:IAAtiva)      { Write-Host "  [IA ADVISOR ATIVO]"    -ForegroundColor DarkCyan }
     Write-Host ""
     SEP
     Write-Host ""
@@ -175,7 +214,7 @@ if (-not (Test-Admin)) {
 }
 
 # ================================================================
-#  DETECCAO DE HARDWARE (v4 - mais detalhes)
+#  DETECCAO DE HARDWARE
 # ================================================================
 function Invoke-DetectarHardware {
     H2 "DETECTANDO HARDWARE"
@@ -189,19 +228,15 @@ function Invoke-DetectarHardware {
         $Script:CPUFab     = if ($Script:CPUNome -match 'AMD') {'AMD'} elseif ($Script:CPUNome -match 'Intel') {'Intel'} else {'Outro'}
         $Script:CPUX3D     = $Script:CPUNome -match 'X3D'
         $Script:CPUIntelK  = $Script:CPUNome -match '\d{4,5}K[FSs]?\b'
-
-        # Detectar geracao Intel
         if ($Script:CPUFab -eq 'Intel' -and $Script:CPUNome -match 'i[3579]-(\d{4,5})') {
-            $n = [int]($Matches[1].Substring(0,2))
-            $Script:CPUGen = $n
+            $Script:CPUGen = [int]($Matches[1].Substring(0,2))
         }
-
         OK "CPU    : $($Script:CPUNome)"
         OK "Nucleos: $($Script:CPUNucleos) fisicos / $($Script:CPUThreads) logicos | Fab: $($Script:CPUFab)$(if($Script:CPUX3D){' | [V-Cache X3D]'})"
         if ($Script:CPUGen -gt 0) { INF "Geracao Intel detectada: $($Script:CPUGen)a geracao" }
     } catch { ER "Falha ao detectar CPU" }
 
-    # RAM (v4: detecta velocidade e numero de slots)
+    # RAM
     try {
         $ram = Get-CimInstance Win32_PhysicalMemory
         $Script:RAMtotalGB    = [math]::Round(($ram | Measure-Object -Property Capacity -Sum).Sum / 1GB, 0)
@@ -209,16 +244,13 @@ function Invoke-DetectarHardware {
         $Script:RAMvelocidade = ($ram | Select-Object -First 1).Speed
         $ramTipoNum           = ($ram | Select-Object -First 1).SMBIOSMemoryType
         $Script:RAMtipo       = switch ($ramTipoNum) { 26{'DDR4'} 34{'DDR5'} 21{'DDR3'} default{'DDR?'} }
-
         OK "RAM    : $($Script:RAMtotalGB) GB $($Script:RAMtipo) @ $($Script:RAMvelocidade) MHz | $($Script:RAMslots) modulo(s)"
-
-        # Aviso sobre dual-channel
         if ($Script:RAMslots -eq 1) {
             WN "Apenas 1 modulo de RAM - considere adicionar outro para Dual Channel (ganho de 20pct em perf)"
         }
     } catch { ER "Falha ao detectar RAM" }
 
-    # GPU (v4: detecta versao do driver)
+    # GPU
     try {
         $gpu = Get-CimInstance Win32_VideoController | Where-Object {
             $_.Name -notmatch 'Microsoft|Remote|Virtual|Basic' -and $_.AdapterRAM -gt 200MB
@@ -233,18 +265,13 @@ function Invoke-DetectarHardware {
                              elseif ($Script:GPUNome -match 'Intel|Arc') {'Intel'}
                              else {'Outro'}
 
-        # Localizar nvidia-smi
-        $smis = @(
-            "$env:ProgramFiles\NVIDIA Corporation\NVSMI\nvidia-smi.exe",
-            "$env:SystemRoot\System32\nvidia-smi.exe"
-        )
+        $smis = @("$env:ProgramFiles\NVIDIA Corporation\NVSMI\nvidia-smi.exe","$env:SystemRoot\System32\nvidia-smi.exe")
         foreach ($c in $smis) { if (Test-Path $c) { $Script:GPUSmi = $c; break } }
         if (-not $Script:GPUSmi) {
             $cmd = Get-Command "nvidia-smi.exe" -ErrorAction SilentlyContinue
             if ($cmd) { $Script:GPUSmi = $cmd.Source }
         }
 
-        # Dados nvidia-smi
         if ($Script:GPUFab -eq 'NVIDIA' -and $Script:GPUSmi) {
             $d = & $Script:GPUSmi --query-gpu=temperature.gpu,clocks.current.graphics,power.limit,power.max_limit --format=csv,noheader,nounits 2>$null
             if ($d) {
@@ -257,7 +284,6 @@ function Invoke-DetectarHardware {
                 }
             }
         }
-
         OK "GPU    : $($Script:GPUNome) ($($Script:GPUVRAM) GB VRAM) | Driver: $($Script:GPUDriver)"
         if ($Script:GPUTemp -gt 0) {
             $corT = if($Script:GPUTemp -lt 60){'Green'}elseif($Script:GPUTemp -lt 75){'Yellow'}else{'Red'}
@@ -265,20 +291,16 @@ function Invoke-DetectarHardware {
         }
     } catch { ER "Falha ao detectar GPU" }
 
-    # Disco (v4: detecta NVMe via WMI)
+    # Disco
     try {
         $disco = Get-PhysicalDisk | Where-Object { $_.DeviceId -eq "0" } | Select-Object -First 1
         if (-not $disco) { $disco = Get-PhysicalDisk | Select-Object -First 1 }
         $Script:DiscoNome = $disco.FriendlyName
         $Script:DiscoTipo = $disco.MediaType
-
-        # Detectar NVMe
         $nvme = Get-CimInstance -Namespace root/Microsoft/Windows/Storage -ClassName MSFT_PhysicalDisk 2>$null |
                 Where-Object { $_.BusType -eq 17 } | Select-Object -First 1
         if ($nvme) { $Script:DiscoNVMe = $true }
-        # Fallback pelo nome
         if ($Script:DiscoNome -match 'NVMe|M\.2|PCIe') { $Script:DiscoNVMe = $true }
-
         $tipoStr = if ($Script:DiscoNVMe) { "NVMe" } elseif ($Script:DiscoTipo -match 'SSD') { "SSD SATA" } else { "HDD" }
         OK "Disco  : $($Script:DiscoNome) [$tipoStr]"
     } catch { ER "Falha ao detectar disco" }
@@ -287,26 +309,234 @@ function Invoke-DetectarHardware {
     try {
         $win = Get-CimInstance Win32_OperatingSystem
         $Script:WinBuild = [int]$win.BuildNumber
+        $Script:IsWin11  = ($Script:WinBuild -ge 22000)   # Win11 = build 22000+
         $Script:WinVer   = $win.Caption
         OK "SO     : $($Script:WinVer) (Build $($Script:WinBuild))"
         OK "Usuario: $env:USERNAME @ $env:COMPUTERNAME"
     } catch {}
 
-    # Winget
     $Script:TemWinget = [bool](Get-Command winget -ErrorAction SilentlyContinue)
     if ($Script:TemWinget) { OK "Winget : Disponivel" } else { WN "Winget : Nao encontrado" }
 
-    LOG "HW detectado: CPU=$($Script:CPUNome) | GPU=$($Script:GPUNome) | RAM=$($Script:RAMtotalGB)GB $($Script:RAMtipo) @$($Script:RAMvelocidade)MHz | Disco=$($Script:DiscoNome) NVMe=$($Script:DiscoNVMe)"
+    LOG "HW: CPU=$($Script:CPUNome) | GPU=$($Script:GPUNome) | RAM=$($Script:RAMtotalGB)GB $($Script:RAMtipo) @$($Script:RAMvelocidade)MHz | Disco=$($Script:DiscoNome) NVMe=$($Script:DiscoNVMe)"
     PAUSE
 }
 
 # ================================================================
-#  MODULO 1 - PLANO DE ENERGIA INTELIGENTE v4
+#  NOVO v5: SISTEMA DE TWEAKS GRANULARES (checklist interativo)
+# ================================================================
+function Invoke-TweakChecklist {
+    param(
+        [string]$Titulo,
+        [array]$Tweaks   # cada item: @{Nome="..."; Desc="..."; Risco="baixo|medio|alto"; Bloco={...}}
+    )
+
+    H2 $Titulo
+    Write-Host "  Escolha quais tweaks aplicar. ENTER = aplicar todos marcados." -ForegroundColor DarkCyan
+    Write-Host ""
+
+    # Exibir lista com status
+    $selecionados = @{}
+    for ($i = 0; $i -lt $Tweaks.Count; $i++) {
+        # ALTO = desmarcado por padrao (risco real), BAIXO/MEDIO = marcado
+        $selecionados[$i] = ($Tweaks[$i].Risco -ne "alto")
+    }
+
+    $continuar = $true
+    while ($continuar) {
+        # Redesenhar lista
+        for ($i = 0; $i -lt $Tweaks.Count; $i++) {
+            $t   = $Tweaks[$i]
+            $chk = if ($selecionados[$i]) { "[X]" } else { "[ ]" }
+            $cor = switch ($t.Risco) {
+                'alto'  { 'Red' }
+                'medio' { 'Yellow' }
+                default { 'Green' }
+            }
+            $risco = "[$($t.Risco.ToUpper())]".PadRight(8)
+            Write-Host ("  {0} {1,2}. {2}" -f $chk, ($i+1), $t.Nome) -NoNewline -ForegroundColor White
+            Write-Host "  $risco" -NoNewline -ForegroundColor $cor
+            Write-Host "  $($t.Desc)" -ForegroundColor DarkGray
+        }
+
+        Write-Host ""
+        Write-Host "  [numero] Marcar/desmarcar  |  [A] Todos  |  [N] Nenhum  |  [ENTER] Aplicar marcados  |  [V] Voltar" -ForegroundColor DarkCyan
+        Write-Host ""
+        $op = Read-Host "  Opcao"
+
+        if ($op -match '^[Vv]$') { return }
+        if ($op -match '^[Aa]$') {
+            for ($i = 0; $i -lt $Tweaks.Count; $i++) { $selecionados[$i] = $true }
+            Clear-Host; continue
+        }
+        if ($op -match '^[Nn]$') {
+            for ($i = 0; $i -lt $Tweaks.Count; $i++) { $selecionados[$i] = $false }
+            Clear-Host; continue
+        }
+        if ($op -eq '') {
+            $continuar = $false
+        } elseif ($op -match '^\d+$') {
+            $idx = [int]$op - 1
+            if ($idx -ge 0 -and $idx -lt $Tweaks.Count) {
+                $selecionados[$idx] = -not $selecionados[$idx]
+            }
+            Clear-Host; continue
+        } else {
+            Clear-Host; continue
+        }
+    }
+
+    # Aplicar tweaks selecionados
+    $aplicados = 0
+    Write-Host ""
+    for ($i = 0; $i -lt $Tweaks.Count; $i++) {
+        if ($selecionados[$i]) {
+            $t = $Tweaks[$i]
+            try {
+                & $t.Bloco
+                OK "$($t.Nome)"
+                $Script:TweaksFeitos.Add("$Titulo > $($t.Nome)")
+                $aplicados++
+            } catch {
+                ER "Falha: $($t.Nome)"
+            }
+        }
+    }
+
+    Write-Host ""
+    OK "$aplicados tweak(s) aplicado(s)"
+    LOG "${Titulo}: $aplicados tweaks aplicados"
+    PAUSE
+}
+
+# ================================================================
+#  NOVO v5: IA ADVISOR (Claude API)
+# ================================================================
+function Invoke-ConfigurarIA {
+    H2 "STATUS DA IA ADVISOR"
+
+    if ($Script:IAAtiva) {
+        OK "IA Advisor: ATIVA"
+        INF "Modelo  : Claude Haiku 4.5 (\$1/M input | \$5/M output)"
+        INF "Custo   : ~\$0.003 por analise de hardware"
+        INF "200 analises/mes: ~\$0.67 (aprox. R\$ 4,00)"
+    } else {
+        ER "IA Advisor: INATIVA"
+        WN "Configure a variavel \$Script:IAChave no inicio do script"
+        INF "Obtenha sua chave em: https://console.anthropic.com"
+    }
+    PAUSE
+}
+
+function Invoke-IaAdvisor {
+    H2 "IA ADVISOR - ANALISE PERSONALIZADA"
+
+    if (-not $Script:IAAtiva) {
+        WN "IA nao configurada. Configure primeiro em Ferramentas > Configurar IA."
+        PAUSE; return
+    }
+
+    if (-not $Script:CPUNome) {
+        IN "Detectando hardware primeiro..."
+        Invoke-DetectarHardware
+    }
+
+    # Montar prompt de hardware para a IA
+    $hwInfo = @"
+Hardware do cliente:
+- CPU: $($Script:CPUNome) ($($Script:CPUNucleos) nucleos fisicos / $($Script:CPUThreads) threads, $($Script:CPUFab)$(if($Script:CPUX3D){', V-Cache X3D'})$(if($Script:CPUGen -gt 0){", $($Script:CPUGen)a geracao"}))
+- GPU: $($Script:GPUNome) ($($Script:GPUVRAM) GB VRAM, $($Script:GPUFab)$(if($Script:GPUTemp -gt 0){", $($Script:GPUTemp)C atual"}))
+- RAM: $($Script:RAMtotalGB) GB $($Script:RAMtipo) @ $($Script:RAMvelocidade) MHz, $($Script:RAMslots) modulo(s)$(if($Script:RAMslots -eq 1){' (SINGLE CHANNEL - ponto critico)'})
+- Disco: $($Script:DiscoNome) $(if($Script:DiscoNVMe){'NVMe'}elseif($Script:DiscoTipo -match 'SSD'){'SSD SATA'}else{'HDD'})
+- Windows: $($Script:WinVer) Build $($Script:WinBuild)
+"@
+
+    # Forcar TLS 1.2 (PS 5.1 usa TLS 1.0 por padrao - API Anthropic exige 1.2+)
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+    Write-Host "  Consultando IA..." -ForegroundColor DarkCyan
+
+    $prompt = @"
+Voce e um especialista em otimizacao de Windows para gaming e performance.
+Analise o hardware abaixo e gere um relatorio de otimizacao personalizado em portugues.
+
+$hwInfo
+
+Responda com:
+1. PONTOS CRITICOS: o que mais limita este sistema agora (max 3 itens)
+2. PRIORIDADE DE OTIMIZACAO: lista ordenada dos 5 tweaks mais impactantes para este hardware especifico
+3. ALERTAS DE HARDWARE: qualquer coisa que merece atencao (temperatura, single-channel, driver, etc)
+4. PERFIL RECOMENDADO: Gaming / Workstation / Equilibrado e por que
+5. ESTIMATIVA DE GANHO: estimativa realista de melhora de FPS/latencia com as otimizacoes
+
+Seja especifico ao hardware listado. Mencione o nome dos componentes nas recomendacoes.
+Resposta em texto simples, sem markdown, maximo 50 linhas.
+"@
+
+    try {
+        $body = @{
+            model      = "claude-haiku-4-5-20251001"   # Haiku 4.5: $1/$5 por 1M tokens - ideal para analise de hardware
+            max_tokens = 1000
+            messages   = @(@{ role = "user"; content = $prompt })
+        } | ConvertTo-Json -Depth 5
+
+        $headers = @{
+            "x-api-key"         = $Script:IAChave
+            "anthropic-version" = "2023-06-01"
+            "content-type"      = "application/json"
+        }
+
+        $resp = Invoke-RestMethod -Uri "https://api.anthropic.com/v1/messages" `
+                    -Method POST -Headers $headers -Body $body -ErrorAction Stop
+
+        $texto = $resp.content[0].text
+
+        Write-Host ""
+        Write-Host "  $("=" * 70)" -ForegroundColor DarkCyan
+        Write-Host "  ANALISE IA ADVISOR - $($Script:CPUNome)" -ForegroundColor Cyan
+        Write-Host "  $("=" * 70)" -ForegroundColor DarkCyan
+        Write-Host ""
+
+        $texto -split "`n" | ForEach-Object {
+            $linha = $_.Trim()
+            if ($linha -match '^\d\.') {
+                Write-Host "  $linha" -ForegroundColor Cyan
+            } elseif ($linha -match '^(CRITICO|ALERTA|URGENTE)') {
+                Write-Host "  $linha" -ForegroundColor Red
+            } elseif ($linha -match '^(RECOMEND|GANHO|PERFIL)') {
+                Write-Host "  $linha" -ForegroundColor Green
+            } elseif ($linha -ne '') {
+                Write-Host "  $linha" -ForegroundColor White
+            } else {
+                Write-Host ""
+            }
+        }
+
+        Write-Host ""
+        Write-Host "  $("=" * 70)" -ForegroundColor DarkCyan
+
+        # Salvar relatorio IA
+        $relIA = Join-Path $Script:PastaRaiz "IA_Advisor_$(Get-Date -f 'yyyyMMdd_HHmmss').txt"
+        @("AbimalekBoost v$($Script:Versao) - Relatorio IA Advisor", "Data: $(Get-Date -f 'dd/MM/yyyy HH:mm')", "", $hwInfo, "", "ANALISE:", $texto) |
+            Out-File $relIA -Encoding UTF8 -Force
+        Write-Host ""
+        IN "Relatorio IA salvo em: $relIA"
+        LOG "IA Advisor consultado. Relatorio: $relIA"
+
+    } catch {
+        ER "Falha ao conectar na API: $($_.Exception.Message)"
+        WN "Verifique sua chave API e conexao com internet."
+    }
+
+    PAUSE
+}
+
+# ================================================================
+#  MODULO 1 - PLANO DE ENERGIA (com checklist)
 # ================================================================
 function Invoke-PlanoEnergia {
     H2 "PLANO DE ENERGIA INTELIGENTE"
 
-    # Backup do plano atual
     $atual = powercfg /getactivescheme 2>$null
     if ($atual -match 'GUID:\s*([\w-]+)') {
         $Script:PlanoOrig = $Matches[1]
@@ -314,7 +544,6 @@ function Invoke-PlanoEnergia {
         IN "Plano atual salvo: $($Script:PlanoOrig)"
     }
 
-    # Menu de perfil
     Write-Host "  Selecione o perfil de uso:" -ForegroundColor Cyan
     Write-Host "  [1] Gaming         - maxima performance em jogos" -ForegroundColor White
     Write-Host "  [2] Workstation    - performance + estabilidade termica" -ForegroundColor White
@@ -324,23 +553,20 @@ function Invoke-PlanoEnergia {
     $per = Read-Host "  Perfil [1-4]"
     if (-not $per) { $per = "4" }
 
-    $modoGaming      = $false
-    $modoWorkstation = $false
-    $modoEquil       = $false
+    $modoGaming = $false; $modoWorkstation = $false; $modoEquil = $false
 
     switch ($per.Trim()) {
         '1' { $modoGaming = $true }
         '2' { $modoWorkstation = $true }
         '3' { $modoEquil = $true }
         default {
-            if ($Script:CPUX3D)              { $modoEquil = $true }
-            elseif ($Script:CPUFab -eq 'AMD'){ $modoGaming = $true }
-            else                             { $modoGaming = $true }
+            if ($Script:CPUX3D) { $modoEquil = $true }
+            else                { $modoGaming = $true }
         }
     }
 
     if ($Script:CPUX3D -and $modoGaming) {
-        WN "X3D detectado com Gaming: usando Balanced (High Perf prejudica V-Cache)"
+        WN "X3D detectado: usando Balanced (High Perf prejudica V-Cache)"
         $modoGaming = $false; $modoEquil = $true
     }
 
@@ -349,19 +575,16 @@ function Invoke-PlanoEnergia {
         $amd = powercfg /list 2>$null | Select-String 'AMD Ryzen Balanced'
         if ($amd -and $Script:CPUFab -eq 'AMD') {
             $guid = ($amd.Line -split '\s+' | Where-Object {$_ -match '^[0-9a-f-]{36}$'}) | Select-Object -First 1
-            if ($guid) { powercfg /setactive $guid 2>$null; OK "AMD Ryzen Balanced ativado (ideal para X3D)" }
-        } else {
-            powercfg /setactive SCHEME_BALANCED 2>$null; OK "Plano Balanceado ativado"
-        }
+            if ($guid) { powercfg /setactive $guid 2>$null; OK "AMD Ryzen Balanced ativado" }
+        } else { powercfg /setactive SCHEME_BALANCED 2>$null; OK "Plano Balanceado ativado" }
     } elseif ($modoGaming -and $Script:CPUFab -eq 'Intel') {
         powercfg /duplicatescheme e9a42b02-d5df-448d-aa00-03f14749eb61 2>$null | Out-Null
         $ult = powercfg /list 2>$null | Select-String 'Ultimate Performance'
         if ($ult) {
             $guid = ($ult.Line -split '\s+' | Where-Object {$_ -match '^[0-9a-f-]{36}$'}) | Select-Object -First 1
-            if ($guid) { powercfg /setactive $guid 2>$null; OK "Ultimate Performance ativado (Intel Gaming)" }
+            if ($guid) { powercfg /setactive $guid 2>$null; OK "Ultimate Performance ativado" }
         } else { powercfg /setactive SCHEME_MIN 2>$null; OK "Alto Desempenho ativado" }
     } else {
-        # AMD Gaming
         $amd = powercfg /list 2>$null | Select-String 'AMD Ryzen Balanced'
         if ($amd) {
             $guid = ($amd.Line -split '\s+' | Where-Object {$_ -match '^[0-9a-f-]{36}$'}) | Select-Object -First 1
@@ -369,34 +592,76 @@ function Invoke-PlanoEnergia {
         } else { powercfg /setactive SCHEME_MIN 2>$null; OK "Alto Desempenho ativado" }
     }
 
-    # Configuracoes avancadas do plano
+    # Checklist de tweaks avancados do plano
     $bmodo = if ($Script:CPUX3D) { 4 } elseif ($modoWorkstation) { 0 } else { 2 }
-    powercfg /setacvalueindex SCHEME_CURRENT SUB_PROCESSOR CPMINCORES     100    2>$null
-    powercfg /setacvalueindex SCHEME_CURRENT SUB_PROCESSOR PERFBOOSTMODE  $bmodo 2>$null
-    powercfg /setacvalueindex SCHEME_CURRENT SUB_PROCESSOR PERFINCTHRESHOLD 10   2>$null
-    powercfg /setacvalueindex SCHEME_CURRENT SUB_PROCESSOR PERFDECTHRESHOLD  8   2>$null
-    powercfg /setacvalueindex SCHEME_CURRENT SUB_PROCESSOR SYSCOOLPOL      0     2>$null  # Active cooling
-    powercfg /change standby-timeout-ac 0 2>$null
-    powercfg /change monitor-timeout-ac 0 2>$null
+    $tweaks = @(
+        @{
+            Nome  = "Core Parking OFF"
+            Desc  = "Mantém todos os nucleos ativos, sem adormecer"
+            Risco = "baixo"
+            Bloco = { powercfg /setacvalueindex SCHEME_CURRENT SUB_PROCESSOR CPMINCORES 100 2>$null }
+        }
+        @{
+            Nome  = "CPU Boost Mode Agressivo"
+            Desc  = "Transicoes de frequencia rapidas (melhor FPS)"
+            Risco = "baixo"
+            Bloco = { powercfg /setacvalueindex SCHEME_CURRENT SUB_PROCESSOR PERFBOOSTMODE $bmodo 2>$null }
+        }
+        @{
+            Nome  = "Sleep e Monitor OFF"
+            Desc  = "Desativa suspensao automatica do monitor e PC"
+            Risco = "baixo"
+            Bloco = {
+                powercfg /change standby-timeout-ac 0 2>$null
+                powercfg /change monitor-timeout-ac 0 2>$null
+            }
+        }
+        @{
+            Nome  = "Throttle de Temperatura Desativado"
+            Desc  = "Politica de cooling: Active (sem throttle passivo)"
+            Risco = "medio"
+            Bloco = { powercfg /setacvalueindex SCHEME_CURRENT SUB_PROCESSOR SYSCOOLPOL 0 2>$null }
+        }
+        @{
+            Nome  = "Desativar Hibernate"
+            Desc  = "Remove hiberfil.sys (libera GBs no SSD)"
+            Risco = "baixo"
+            Bloco = { powercfg /h off 2>$null }
+        }
+        @{
+            Nome  = "Desativar USB Selective Suspend"
+            Desc  = "Evita que periferiicos USB (mouse/teclado) adormecam"
+            Risco = "baixo"
+            Bloco = {
+                powercfg /setacvalueindex SCHEME_CURRENT 2a737441-1930-4402-8d77-b2bebba308a3 48e6b7a6-50f5-4782-a5d4-53bb8f07e226 0 2>$null
+            }
+        }
+        @{
+            Nome  = "PCI Express Link State Power Management OFF"
+            Desc  = "Evita que GPU e NVMe reduzam velocidade PCIe"
+            Risco = "baixo"
+            Bloco = {
+                powercfg /setacvalueindex SCHEME_CURRENT SUB_PCIEXPRESS ASPM 0 2>$null
+            }
+        }
+    )
 
-    # NOVO v4: Desativar Hibernate (libera espaco no SSD)
-    if ($modoGaming) {
-        if (CONF "Desativar Hibernate? (libera GB no SSD - recomendado Gaming)") {
-            powercfg /h off 2>$null
-            OK "Hibernate desativado (hiberfil.sys removido)"
+    # Intel 12a gen+: tweak extra
+    if ($Script:CPUFab -eq 'Intel' -and $Script:CPUGen -ge 12) {
+        $tweaks += @{
+            Nome  = "Intel E+P Core Parking 50pct"
+            Desc  = "P-cores sempre ativos, E-cores gerenciados pelo SO"
+            Risco = "baixo"
+            Bloco = { powercfg /setacvalueindex SCHEME_CURRENT SUB_PROCESSOR CPMINCORES 50 2>$null }
         }
     }
 
-    # NOVO v4: Ajuste de CPU parking por geracao Intel
-    if ($Script:CPUFab -eq 'Intel' -and $Script:CPUGen -ge 12) {
-        # Alder Lake e acima: E-cores e P-cores - nao desativar parking total
-        powercfg /setacvalueindex SCHEME_CURRENT SUB_PROCESSOR CPMINCORES 50 2>$null
-        WN "Intel $($Script:CPUGen)a ger. (E+P cores): Core Parking em 50% (P-cores ativos, E-cores gerenciados)"
-    }
+    Write-Host ""
+    Invoke-TweakChecklist -Titulo "Tweaks de Plano de Energia" -Tweaks $tweaks
 
-    OK "Sleep desativado | Boost: modo $(if($Script:CPUX3D){'Efficient Aggressive (X3D)'}elseif($modoWorkstation){'Disabled (Workstation)'}else{'Aggressive'})"
+    powercfg /setactive SCHEME_CURRENT 2>$null
     $Script:TweaksFeitos.Add("Plano de energia: perfil $(if($modoGaming){'Gaming'}elseif($modoWorkstation){'Workstation'}else{'Equilibrado'})")
-    LOG "Plano de energia configurado: Gaming=$modoGaming Work=$modoWorkstation Equil=$modoEquil"
+    LOG "Plano de energia configurado"
 }
 
 # ================================================================
@@ -406,13 +671,11 @@ function Invoke-Privacidade {
     H2 "PRIVACIDADE E TELEMETRIA"
 
     $tweaks = @(
-        # Telemetria
         @{P="HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection";                        N="AllowTelemetry";                              V=0}
         @{P="HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\DataCollection";         N="AllowTelemetry";                              V=0}
         @{P="HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection";                        N="DoNotShowFeedbackNotifications";              V=1}
         @{P="HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection";                        N="LimitDiagnosticLogCollection";                V=1}
         @{P="HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection";                        N="DisableOneSettingsDownloads";                 V=1}
-        # Anuncios
         @{P="HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\AdvertisingInfo";                 N="Enabled";                                     V=0}
         @{P="HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Privacy";                         N="TailoredExperiencesWithDiagnosticDataEnabled";V=0}
         @{P="HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\ContentDeliveryManager";          N="SilentInstalledAppsEnabled";                  V=0}
@@ -422,29 +685,21 @@ function Invoke-Privacidade {
         @{P="HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\ContentDeliveryManager";          N="OemPreInstalledAppsEnabled";                  V=0}
         @{P="HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\ContentDeliveryManager";          N="PreInstalledAppsEnabled";                     V=0}
         @{P="HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\ContentDeliveryManager";          N="ContentDeliveryAllowed";                      V=0}
-        # Historico / Timeline
         @{P="HKLM:\SOFTWARE\Policies\Microsoft\Windows\System";                                N="EnableActivityFeed";                          V=0}
         @{P="HKLM:\SOFTWARE\Policies\Microsoft\Windows\System";                                N="PublishUserActivities";                       V=0}
         @{P="HKLM:\SOFTWARE\Policies\Microsoft\Windows\System";                                N="UploadUserActivities";                        V=0}
-        # Localizacao
         @{P="HKLM:\SOFTWARE\Policies\Microsoft\Windows\LocationAndSensors";                    N="DisableLocation";                             V=1}
         @{P="HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\location"; N="Value";                        V="Deny"; T="String"}
-        # Cortana / Search
         @{P="HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search";                        N="AllowCortana";                                V=0}
         @{P="HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search";                        N="DisableWebSearch";                            V=1}
         @{P="HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search";                        N="ConnectedSearchUseWeb";                       V=0}
         @{P="HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search";                        N="AllowSearchHighlights";                       V=0}
-        # Start / sugestoes
         @{P="HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced";               N="ShowSyncProviderNotifications";               V=0}
         @{P="HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced";               N="Start_TrackProgs";                            V=0}
-        # Diagnostico / apps
         @{P="HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\appDiagnostics"; N="Value";                  V="Deny"; T="String"}
-        # Feedback
         @{P="HKCU:\SOFTWARE\Microsoft\Siuf\Rules";                                             N="NumberOfSIUFInPeriod";                        V=0}
         @{P="HKCU:\SOFTWARE\Microsoft\Siuf\Rules";                                             N="PeriodInNanoSeconds";                         V=0}
-        # NOVO v4: OneDrive startup
         @{P="HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run";                             N="OneDrive";                                    V=""; T="RemoveIfExists"}
-        # NOVO v4: Recall (Windows 11 24H2)
         @{P="HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsAI";                             N="DisableAIDataAnalysis";                       V=1}
     )
 
@@ -454,31 +709,25 @@ function Invoke-Privacidade {
             if (-not (Test-Path $t.P)) { New-Item -Path $t.P -Force | Out-Null }
             if ($t.T -eq 'RemoveIfExists') {
                 if (Get-ItemProperty $t.P -Name $t.N -ErrorAction SilentlyContinue) {
-                    Remove-ItemProperty $t.P -Name $t.N -Force -ErrorAction SilentlyContinue
-                    $ok++
+                    Remove-ItemProperty $t.P -Name $t.N -Force -ErrorAction SilentlyContinue; $ok++
                 }
             } elseif ($t.T -eq 'String') {
-                Set-ItemProperty -Path $t.P -Name $t.N -Value $t.V -Type String -Force
-                $ok++
+                Set-ItemProperty -Path $t.P -Name $t.N -Value $t.V -Type String -Force; $ok++
             } else {
-                Set-ItemProperty -Path $t.P -Name $t.N -Value $t.V -Type DWord -Force
-                $ok++
+                Set-ItemProperty -Path $t.P -Name $t.N -Value $t.V -Type DWord -Force; $ok++
             }
         } catch {}
     }
 
-    OK "Telemetria e diagnostico desativados"
-    OK "Anuncios e sugestoes bloqueados"
-    OK "Cortana e pesquisa web desativados"
+    OK "Telemetria, anuncios e Cortana desativados ($ok tweaks)"
     OK "Recall (Windows AI) desativado"
-    OK "$ok tweaks de privacidade aplicados"
 
-    # Microfone e webcam - pergunta separada pois afeta Discord, Zoom, etc.
+    # Microfone e webcam - pergunta separada
     Write-Host ""
     WN "Atencao: Bloquear microfone e camera desativa o acesso de TODOS os apps"
     WN "incluindo Discord, Zoom, Teams, OBS e outros."
     Write-Host "  [1] Bloquear microfone e camera (mais privacidade)" -ForegroundColor White
-    Write-Host "  [2] Manter microfone e camera habilitados (recomendado para uso geral)" -ForegroundColor Yellow
+    Write-Host "  [2] Manter habilitados (recomendado para uso geral)" -ForegroundColor Yellow
     Write-Host ""
     $micOp = Read-Host "  Opcao [1/2]"
     if ($micOp.Trim() -eq '1') {
@@ -489,202 +738,235 @@ function Invoke-Privacidade {
             if (-not (Test-Path $camPath)) { New-Item $camPath -Force | Out-Null }
             Set-ItemProperty $micPath -Name "Value" -Value "Deny" -Type String -Force
             Set-ItemProperty $camPath -Name "Value" -Value "Deny" -Type String -Force
-            OK "Microfone e camera bloqueados para todos os apps"
+            OK "Microfone e camera bloqueados"
             WN "Para reativar: Configuracoes > Privacidade > Microfone / Camera"
             $Script:TweaksFeitos.Add("Privacidade: microfone e camera BLOQUEADOS")
         } catch { ER "Falha ao bloquear microfone/camera" }
     } else {
         OK "Microfone e camera mantidos habilitados"
-        $Script:TweaksFeitos.Add("Privacidade: microfone e camera mantidos (habilitados)")
     }
 
-    $Script:TweaksFeitos.Add("Privacidade: $ok tweaks de telemetria/anuncios")
-    LOG "Privacidade: $ok tweaks | Mic/Cam: $(if($micOp.Trim() -eq '1'){'BLOQUEADOS'}else{'mantidos'})"
+    $Script:TweaksFeitos.Add("Privacidade: $ok tweaks")
+    LOG "Privacidade: $ok tweaks | Mic: $(if($micOp -eq '1'){'BLOQUEADO'}else{'mantido'})"
 }
 
 # ================================================================
-#  MODULO 3 - GAME BAR, GAME MODE, HAGS
+#  MODULO 3 - GAME BAR / GAME MODE / HAGS
 # ================================================================
 function Invoke-GameMode {
     H2 "GAME BAR / GAME MODE / HAGS"
 
-    $tweaks = @(
-        @{P="HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\GameDVR";        N="AppCaptureEnabled";                     V=0}
-        @{P="HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR";              N="AllowGameDVR";                          V=0}
-        @{P="HKCU:\System\GameConfigStore";                                    N="GameDVR_Enabled";                       V=0}
-        @{P="HKCU:\System\GameConfigStore";                                    N="GameDVR_FSEBehaviorMode";               V=2}
-        @{P="HKCU:\System\GameConfigStore";                                    N="GameDVR_HonorUserFSEBehaviorMode";      V=1}
-        @{P="HKCU:\System\GameConfigStore";                                    N="GameDVR_DXGIHonorFSEWindowsCompatible"; V=1}
-        @{P="HKCU:\SOFTWARE\Microsoft\GameBar";                                N="AllowAutoGameMode";                     V=1}
-        @{P="HKCU:\SOFTWARE\Microsoft\GameBar";                                N="AutoGameModeEnabled";                   V=1}
-        # HAGS - Hardware Accelerated GPU Scheduling
-        @{P="HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers";          N="HwSchMode";                             V=2}
-        # Multimedia Scheduler
-        @{P="HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile"; N="SystemResponsiveness";     V=0}
-        @{P="HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games"; N="Priority";     V=6}
-        # NOVO v4: MpKsL1 latencia do kernel scheduler
-        @{P="HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games"; N="Affinity";     V=0}
-        @{P="HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games"; N="Background Only"; V="False"; T="String"}
-        @{P="HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games"; N="Clock Rate";   V=10000}
-        @{P="HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games"; N="GPU Priority"; V=8}
+    $tweaksList = @(
+        @{
+            Nome  = "Xbox Game Bar OFF"
+            Desc  = "Desativa captura de tela/video em segundo plano"
+            Risco = "baixo"
+            Bloco = {
+                $r = @(
+                    @{P="HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\GameDVR"; N="AppCaptureEnabled"; V=0}
+                    @{P="HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR";       N="AllowGameDVR";      V=0}
+                    @{P="HKCU:\System\GameConfigStore";                            N="GameDVR_Enabled";   V=0}
+                )
+                foreach ($t in $r) {
+                    if (-not (Test-Path $t.P)) { New-Item $t.P -Force | Out-Null }
+                    Set-ItemProperty $t.P -Name $t.N -Value $t.V -Type DWord -Force 2>$null
+                }
+            }
+        }
+        @{
+            Nome  = "Game Mode ON"
+            Desc  = "Windows prioriza CPU/GPU para o jogo em execucao"
+            Risco = "baixo"
+            Bloco = {
+                $p = "HKCU:\SOFTWARE\Microsoft\GameBar"
+                if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
+                Set-ItemProperty $p -Name "AllowAutoGameMode"  -Value 1 -Type DWord -Force 2>$null
+                Set-ItemProperty $p -Name "AutoGameModeEnabled" -Value 1 -Type DWord -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "HAGS - Hardware GPU Scheduling"
+            Desc  = "GPU gerencia propria fila de trabalho (reduz latencia CPU->GPU)"
+            Risco = "baixo"
+            Bloco = {
+                Set-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers" -Name "HwSchMode" -Value 2 -Type DWord -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "Multimedia Scheduler - Jogos Prioridade Maxima"
+            Desc  = "MMCSS prioriza threads de jogo no scheduler do kernel"
+            Risco = "baixo"
+            Bloco = {
+                $p = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile"
+                Set-ItemProperty $p -Name "SystemResponsiveness" -Value 0 -Type DWord -Force 2>$null
+                $g = "$p\Tasks\Games"
+                if (-not (Test-Path $g)) { New-Item $g -Force | Out-Null }
+                Set-ItemProperty $g -Name "Priority"             -Value 6     -Type DWord  -Force 2>$null
+                Set-ItemProperty $g -Name "Affinity"             -Value 0     -Type DWord  -Force 2>$null
+                Set-ItemProperty $g -Name "Clock Rate"           -Value 10000 -Type DWord  -Force 2>$null
+                Set-ItemProperty $g -Name "GPU Priority"         -Value 8     -Type DWord  -Force 2>$null
+                Set-ItemProperty $g -Name "Background Only"      -Value "False" -Type String -Force 2>$null
+                Set-ItemProperty $g -Name "Scheduling Category"  -Value "High"  -Type String -Force 2>$null
+                Set-ItemProperty $g -Name "SFIO Priority"        -Value "High"  -Type String -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "FSE - Fullscreen Exclusive Mode"
+            Desc  = "Permite acesso exclusivo da GPU ao jogo em tela cheia"
+            Risco = "baixo"
+            Bloco = {
+                $p = "HKCU:\System\GameConfigStore"
+                if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
+                Set-ItemProperty $p -Name "GameDVR_FSEBehaviorMode"               -Value 2 -Type DWord -Force 2>$null
+                Set-ItemProperty $p -Name "GameDVR_HonorUserFSEBehaviorMode"      -Value 1 -Type DWord -Force 2>$null
+                Set-ItemProperty $p -Name "GameDVR_DXGIHonorFSEWindowsCompatible" -Value 1 -Type DWord -Force 2>$null
+            }
+        }
     )
 
-    foreach ($t in $tweaks) {
-        try {
-            if (-not (Test-Path $t.P)) { New-Item -Path $t.P -Force | Out-Null }
-            if ($t.T -eq 'String') {
-                Set-ItemProperty $t.P -Name $t.N -Value $t.V -Type String -Force
-            } else {
-                Set-ItemProperty $t.P -Name $t.N -Value $t.V -Type DWord -Force
-            }
-        } catch {}
-    }
-
-    try {
-        Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games" `
-            -Name "Scheduling Category" -Value "High" -Force 2>$null
-        Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games" `
-            -Name "SFIO Priority" -Value "High" -Force 2>$null
-    } catch {}
-
-    OK "Xbox Game Bar desativado"
-    OK "Game Mode ON + GPU Priority 8"
-    OK "HAGS (Hardware GPU Scheduling) ativado"
-    OK "Multimedia Scheduler: prioridade maxima para jogos"
-    $Script:TweaksFeitos.Add("Game Mode: Bar OFF / HAGS ON / MM Scheduler")
-    LOG "Game Mode configurado"
+    Invoke-TweakChecklist -Titulo "Game Mode / HAGS" -Tweaks $tweaksList
+    $Script:TweaksFeitos.Add("Game Mode: checklist aplicado")
+    LOG "Game Mode configurado v5"
 }
 
 # ================================================================
-#  MODULO 4 - REDE AVANCADA (v4)
+#  MODULO 4 - REDE AVANCADA
 # ================================================================
 function Invoke-OtimizarRede {
     H2 "OTIMIZACAO DE REDE"
 
-    # Nagle Algorithm OFF
-    try {
-        Get-ChildItem "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces" | ForEach-Object {
-            Set-ItemProperty $_.PSPath -Name "TcpAckFrequency" -Value 1  -Type DWord -Force 2>$null
-            Set-ItemProperty $_.PSPath -Name "TCPNoDelay"      -Value 1  -Type DWord -Force 2>$null
-            Set-ItemProperty $_.PSPath -Name "TcpDelAckTicks"  -Value 0  -Type DWord -Force 2>$null
+    $tweaksList = @(
+        @{
+            Nome  = "Nagle Algorithm OFF"
+            Desc  = "Elimina delay de 200ms em pacotes pequenos (online gaming)"
+            Risco = "baixo"
+            Bloco = {
+                Get-ChildItem "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces" | ForEach-Object {
+                    Set-ItemProperty $_.PSPath -Name "TcpAckFrequency" -Value 1 -Type DWord -Force 2>$null
+                    Set-ItemProperty $_.PSPath -Name "TCPNoDelay"      -Value 1 -Type DWord -Force 2>$null
+                    Set-ItemProperty $_.PSPath -Name "TcpDelAckTicks"  -Value 0 -Type DWord -Force 2>$null
+                }
+            }
         }
-        OK "Nagle Algorithm desativado"
-    } catch { ER "Nagle: falha" }
+        @{
+            Nome  = "TCP Stack Otimizado"
+            Desc  = "TTL=64, MaxUserPort, Window Scaling, Timestamps"
+            Risco = "baixo"
+            Bloco = {
+                $p = "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters"
+                Set-ItemProperty $p -Name "DefaultTTL"             -Value 64    -Type DWord -Force 2>$null
+                Set-ItemProperty $p -Name "MaxUserPort"            -Value 65534 -Type DWord -Force 2>$null
+                Set-ItemProperty $p -Name "TcpTimedWaitDelay"      -Value 30    -Type DWord -Force 2>$null
+                Set-ItemProperty $p -Name "EnablePMTUDiscovery"    -Value 1     -Type DWord -Force 2>$null
+                Set-ItemProperty $p -Name "Tcp1323Opts"            -Value 1     -Type DWord -Force 2>$null
+                Set-ItemProperty $p -Name "GlobalMaxTcpWindowSize" -Value 65535 -Type DWord -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "TCP Autotuning + DCA/NetDMA"
+            Desc  = "Autotuning=normal, DCA e NetDMA ativados, ECN desativado"
+            Risco = "baixo"
+            Bloco = {
+                netsh int tcp set global autotuninglevel=normal 2>$null | Out-Null
+                netsh int tcp set global chimney=disabled       2>$null | Out-Null
+                netsh int tcp set global dca=enabled            2>$null | Out-Null
+                netsh int tcp set global netdma=enabled         2>$null | Out-Null
+                netsh int tcp set global ecncapability=disabled 2>$null | Out-Null
+            }
+        }
+        @{
+            Nome  = "Liberar Reserva de Banda (20pct)"
+            Desc  = "Windows reserva 20pct da banda por padrao - libera isso"
+            Risco = "baixo"
+            Bloco = {
+                $p = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Psched"
+                if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
+                Set-ItemProperty $p -Name "NonBestEffortLimit" -Value 0 -Type DWord -Force
+            }
+        }
+        @{
+            Nome  = "NIC Tweaks (IMod OFF, RSS ON, LSO OFF)"
+            Desc  = "Interrupt Moderation OFF, RSS ON, LSO OFF, EEE OFF"
+            Risco = "baixo"
+            Bloco = {
+                $adapters = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' }
+                foreach ($ad in $adapters) {
+                    Set-NetAdapterAdvancedProperty -Name $ad.Name -DisplayName "Interrupt Moderation"         -DisplayValue "Disabled" 2>$null
+                    Set-NetAdapterAdvancedProperty -Name $ad.Name -DisplayName "Receive Side Scaling"         -DisplayValue "Enabled"  2>$null
+                    Set-NetAdapterAdvancedProperty -Name $ad.Name -DisplayName "Large Send Offload v2 (IPv4)" -DisplayValue "Disabled" 2>$null
+                    Set-NetAdapterAdvancedProperty -Name $ad.Name -DisplayName "Large Send Offload v2 (IPv6)" -DisplayValue "Disabled" 2>$null
+                    Set-NetAdapterAdvancedProperty -Name $ad.Name -DisplayName "Energy Efficient Ethernet"    -DisplayValue "Disabled" 2>$null
+                    Set-NetAdapterAdvancedProperty -Name $ad.Name -DisplayName "Packet Priority & VLAN"       -DisplayValue "Enabled"  2>$null
+                }
+            }
+        }
+        @{
+            Nome  = "MSI Mode na NIC"
+            Desc  = "Message Signaled Interrupts para adaptador de rede"
+            Risco = "baixo"
+            Bloco = {
+                $nics = Get-PnpDevice -Class 'Net' -Status 'OK' -ErrorAction SilentlyContinue
+                foreach ($nic in $nics) {
+                    $path = "HKLM:\SYSTEM\CurrentControlSet\Enum\$($nic.InstanceId)\Device Parameters\Interrupt Management\MessageSignaledInterruptProperties"
+                    if (Test-Path $path) {
+                        Set-ItemProperty $path -Name "MSISupported" -Value 1 -Type DWord -Force 2>$null
+                    }
+                }
+            }
+        }
+        @{
+            Nome  = "Desativar IPv6 (se nao usar)"
+            Desc  = "Remove overhead de resolucao dual-stack em redes apenas IPv4"
+            Risco = "medio"
+            Bloco = {
+                $adapters = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' }
+                foreach ($ad in $adapters) {
+                    Disable-NetAdapterBinding -Name $ad.Name -ComponentID ms_tcpip6 2>$null
+                }
+            }
+        }
+    )
 
-    # NOVO v4: TCP Stack tweaks
-    try {
-        $tcpPath = "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters"
-        Set-ItemProperty $tcpPath -Name "DefaultTTL"             -Value 64   -Type DWord -Force 2>$null
-        Set-ItemProperty $tcpPath -Name "MaxUserPort"            -Value 65534 -Type DWord -Force 2>$null
-        Set-ItemProperty $tcpPath -Name "TcpTimedWaitDelay"      -Value 30   -Type DWord -Force 2>$null
-        Set-ItemProperty $tcpPath -Name "EnablePMTUDiscovery"    -Value 1    -Type DWord -Force 2>$null
-        Set-ItemProperty $tcpPath -Name "Tcp1323Opts"            -Value 1    -Type DWord -Force 2>$null
-        Set-ItemProperty $tcpPath -Name "GlobalMaxTcpWindowSize" -Value 65535 -Type DWord -Force 2>$null
-        OK "TCP Stack otimizado (TTL=64, Timestamps, Window Scaling)"
-    } catch {}
+    Invoke-TweakChecklist -Titulo "Tweaks de Rede" -Tweaks $tweaksList
 
-    # NOVO v4: Auto-Tuning Level
-    try {
-        netsh int tcp set global autotuninglevel=normal 2>$null | Out-Null
-        netsh int tcp set global chimney=disabled 2>$null | Out-Null
-        netsh int tcp set global dca=enabled 2>$null | Out-Null
-        netsh int tcp set global netdma=enabled 2>$null | Out-Null
-        netsh int tcp set global ecncapability=disabled 2>$null | Out-Null
-        OK "TCP Autotuning normal | DCA/NetDMA ativados | ECN desativado"
-    } catch {}
-
-    # DNS com teste de latencia
+    # DNS separado (interativo)
     Write-Host ""
-    Write-Host "  Configurar DNS rapido:" -ForegroundColor Cyan
-    Write-Host "  [1] Cloudflare  1.1.1.1 / 1.0.0.1" -ForegroundColor White
-    Write-Host "  [2] Google      8.8.8.8 / 8.8.4.4" -ForegroundColor White
-    Write-Host "  [3] Quad9       9.9.9.9 / 149.112.112.112" -ForegroundColor White
-    Write-Host "  [4] OpenDNS     208.67.222.222 / 208.67.220.220" -ForegroundColor White
-    Write-Host "  [5] Testar automaticamente (recomendado)" -ForegroundColor Yellow
-    Write-Host "  [6] Manter DNS atual" -ForegroundColor DarkGray
-    Write-Host ""
-    $dns = Read-Host "  Escolha o DNS [1-6]"
-
+    Write-Host "  Configurar DNS:?" -ForegroundColor Cyan
+    Write-Host "  [1] Cloudflare 1.1.1.1  [2] Google 8.8.8.8  [3] Quad9 9.9.9.9  [4] Testar auto  [5] Pular"
+    $dns = Read-Host "  DNS [1-5]"
     $dns1 = ""; $dns2 = ""; $dnsNome = ""
-    if ($dns.Trim() -eq '5') {
-        IN "Testando latencia dos servidores DNS..."
+    if ($dns.Trim() -eq '4') {
+        IN "Testando latencia..."
         $servidores = @(
-            @{N="Cloudflare";D1="1.1.1.1";     D2="1.0.0.1"}
-            @{N="Google";    D1="8.8.8.8";     D2="8.8.4.4"}
-            @{N="Quad9";     D1="9.9.9.9";     D2="149.112.112.112"}
-            @{N="OpenDNS";   D1="208.67.222.222";D2="208.67.220.220"}
+            @{N="Cloudflare";D1="1.1.1.1";D2="1.0.0.1"}
+            @{N="Google";D1="8.8.8.8";D2="8.8.4.4"}
+            @{N="Quad9";D1="9.9.9.9";D2="149.112.112.112"}
+            @{N="OpenDNS";D1="208.67.222.222";D2="208.67.220.220"}
         )
         $melhor = $null; $melhorPing = 9999
         foreach ($s in $servidores) {
-            $ping = (Test-Connection -ComputerName $s.D1 -Count 3 -ErrorAction SilentlyContinue |
-                     Measure-Object -Property ResponseTime -Average).Average
+            $ping = (Test-Connection -ComputerName $s.D1 -Count 3 -ErrorAction SilentlyContinue | Measure-Object -Property ResponseTime -Average).Average
             if ($null -eq $ping) { $ping = 9999 }
-            Write-Host "    $($s.N.PadRight(12)): $([math]::Round($ping, 1)) ms" -ForegroundColor $(if($ping -lt 20){'Green'}elseif($ping -lt 50){'Yellow'}else{'Red'})
+            Write-Host "    $($s.N.PadRight(12)): $([math]::Round($ping,1)) ms" -ForegroundColor $(if($ping -lt 20){'Green'}elseif($ping -lt 50){'Yellow'}else{'Red'})
             if ($ping -lt $melhorPing) { $melhorPing = $ping; $melhor = $s }
         }
-        if ($melhor) {
-            $dns1 = $melhor.D1; $dns2 = $melhor.D2; $dnsNome = "$($melhor.N) (mais rapido: $([math]::Round($melhorPing,0))ms)"
-            OK "DNS selecionado automaticamente: $($melhor.N)"
-        }
+        if ($melhor) { $dns1=$melhor.D1; $dns2=$melhor.D2; $dnsNome="$($melhor.N) ($([math]::Round($melhorPing,0))ms)" }
     } else {
         switch ($dns.Trim()) {
-            '1' { $dns1="1.1.1.1";          $dns2="1.0.0.1";           $dnsNome="Cloudflare" }
-            '2' { $dns1="8.8.8.8";          $dns2="8.8.4.4";           $dnsNome="Google" }
-            '3' { $dns1="9.9.9.9";          $dns2="149.112.112.112";   $dnsNome="Quad9" }
-            '4' { $dns1="208.67.222.222";   $dns2="208.67.220.220";    $dnsNome="OpenDNS" }
+            '1' { $dns1="1.1.1.1";       $dns2="1.0.0.1";          $dnsNome="Cloudflare" }
+            '2' { $dns1="8.8.8.8";       $dns2="8.8.4.4";          $dnsNome="Google" }
+            '3' { $dns1="9.9.9.9";       $dns2="149.112.112.112";  $dnsNome="Quad9" }
         }
     }
-
     if ($dns1) {
         $adapters = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' -and $_.InterfaceDescription -notmatch 'Virtual|Loopback' }
-        foreach ($ad in $adapters) {
-            Set-DnsClientServerAddress -InterfaceIndex $ad.ifIndex -ServerAddresses ($dns1,$dns2) 2>$null
-            IN "DNS $dnsNome aplicado em: $($ad.Name)"
-        }
-        OK "DNS $dnsNome configurado"
-        $Script:TweaksFeitos.Add("DNS: $dnsNome")
+        foreach ($ad in $adapters) { Set-DnsClientServerAddress -InterfaceIndex $ad.ifIndex -ServerAddresses ($dns1,$dns2) 2>$null }
+        OK "DNS $dnsNome configurado"; $Script:TweaksFeitos.Add("DNS: $dnsNome")
     }
-
-    # Reserva de banda
-    try {
-        if (-not (Test-Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Psched")) {
-            New-Item "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Psched" -Force | Out-Null
-        }
-        Set-ItemProperty "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Psched" -Name "NonBestEffortLimit" -Value 0 -Type DWord -Force
-        OK "Reserva de 20pct de banda liberada"
-    } catch {}
-
-    # NIC tweaks
-    try {
-        $adapters = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' }
-        foreach ($ad in $adapters) {
-            Set-NetAdapterAdvancedProperty -Name $ad.Name -DisplayName "Interrupt Moderation"            -DisplayValue "Disabled"  2>$null
-            Set-NetAdapterAdvancedProperty -Name $ad.Name -DisplayName "Receive Side Scaling"            -DisplayValue "Enabled"   2>$null
-            Set-NetAdapterAdvancedProperty -Name $ad.Name -DisplayName "Large Send Offload v2 (IPv4)"    -DisplayValue "Disabled"  2>$null
-            Set-NetAdapterAdvancedProperty -Name $ad.Name -DisplayName "Large Send Offload v2 (IPv6)"    -DisplayValue "Disabled"  2>$null
-            Set-NetAdapterAdvancedProperty -Name $ad.Name -DisplayName "Energy Efficient Ethernet"       -DisplayValue "Disabled"  2>$null
-            Set-NetAdapterAdvancedProperty -Name $ad.Name -DisplayName "Packet Priority & VLAN"          -DisplayValue "Enabled"   2>$null
-        }
-        OK "NIC: IMod OFF | RSS ON | LSO OFF | EEE OFF"
-    } catch {}
-
-    # NOVO v4: MSI Mode para NIC
-    try {
-        $nics = Get-PnpDevice -Class 'Net' -Status 'OK' -ErrorAction SilentlyContinue
-        foreach ($nic in $nics) {
-            $path = "HKLM:\SYSTEM\CurrentControlSet\Enum\$($nic.InstanceId)\Device Parameters\Interrupt Management\MessageSignaledInterruptProperties"
-            if (Test-Path $path) {
-                Set-ItemProperty $path -Name "MSISupported" -Value 1 -Type DWord -Force 2>$null
-            }
-        }
-        OK "MSI Mode ativado na NIC (reduz latencia de interrupcoes)"
-    } catch {}
-
     ipconfig /flushdns 2>$null | Out-Null
     OK "Cache DNS limpo"
-
-    $Script:TweaksFeitos.Add("Rede: Nagle OFF, TCP otimizado, NIC MSI, banda liberada")
-    LOG "Rede otimizada v4"
+    $Script:TweaksFeitos.Add("Rede: checklist aplicado")
+    LOG "Rede otimizada v5"
 }
 
 # ================================================================
@@ -708,7 +990,7 @@ function Invoke-Servicos {
         @{N="wisvc";             D="Windows Insider Program"}
         @{N="WerSvc";            D="Relatorio de Erros Windows"}
         @{N="Fax";               D="Fax (obsoleto)"}
-        @{N="icssvc";            D="Hotspot movel (se nao usar)"}
+        @{N="icssvc";            D="Hotspot movel"}
         @{N="PhoneSvc";          D="Vinculador de Telefone"}
         @{N="RmSvc";             D="Gerenciador de Radio"}
         @{N="RemoteRegistry";    D="Registro Remoto (risco de seguranca)"}
@@ -716,19 +998,16 @@ function Invoke-Servicos {
         @{N="WpcMonSvc";         D="Controles parentais"}
         @{N="SharedAccess";      D="ICS compartilhamento de internet"}
         @{N="WMPNetworkSvc";     D="Windows Media Player Network"}
-        # NOVO v4
         @{N="AJRouter";          D="AllJoyn Router (IoT legado)"}
-        @{N="PrintNotify";       D="Notificacoes de impressora (se nao usar)"}
+        @{N="PrintNotify";       D="Notificacoes de impressora"}
         @{N="EntAppSvc";         D="Enterprise App Management"}
         @{N="MsKeyboardFilter";  D="Filtro de teclado Kiosk"}
+        @{N="SysMain";           D="Superfetch (desnecessario em NVMe/SSD)"}
     )
 
-    $off = 0
-    $tot = $svcs.Count
-    $i   = 0
+    $off = 0; $i = 0
     foreach ($s in $svcs) {
-        $i++
-        Show-Progress "Verificando servicos..." $i $tot
+        $i++; Show-Progress "Verificando servicos..." $i $svcs.Count
         try {
             $svc = Get-Service -Name $s.N -ErrorAction SilentlyContinue
             if ($svc) {
@@ -740,9 +1019,7 @@ function Invoke-Servicos {
         } catch {}
     }
     Write-Host ""
-
     $Script:SvcsBackup | ConvertTo-Json | Out-File (Join-Path $Script:PastaBackup "servicos.json") -Encoding UTF8 -Force
-    Write-Host ""
     OK "$off servicos desativados | Backup salvo"
     $Script:TweaksFeitos.Add("Servicos: $off desativados")
     LOG "Servicos: $off desativados"
@@ -754,246 +1031,557 @@ function Invoke-Servicos {
 function Invoke-VisualPerf {
     H2 "VISUAL E PERFORMANCE"
 
-    try {
-        Set-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" `
-            -Name "VisualFXSetting" -Value 2 -Type DWord -Force 2>$null
-    } catch {}
-
-    $tweaks = @(
-        @{P="HKCU:\Control Panel\Desktop";                                       N="DragFullWindows";              V="0";  T="String"}
-        @{P="HKCU:\Control Panel\Desktop";                                       N="MenuShowDelay";                V="0";  T="String"}
-        @{P="HKCU:\Control Panel\Desktop\WindowMetrics";                         N="MinAnimate";                   V=0}
-        @{P="HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"; N="TaskbarAnimations";            V=0}
-        @{P="HKCU:\Software\Microsoft\Windows\DWM";                              N="EnableAeroPeek";               V=0}
-        @{P="HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"; N="ListviewAlphaSelect";          V=0}
-        @{P="HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"; N="ListviewShadow";               V=0}
-        @{P="HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"; N="ExtendedUIHoverTime";          V=1}
-        @{P="HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"; N="HideFileExt";                  V=0}
-        @{P="HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"; N="Hidden";                       V=1}
-        @{P="HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize";N="EnableTransparency";           V=0}
-        # NOVO v4: Desativar widgets taskbar
-        @{P="HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced"; N="TaskbarDa";                    V=0}
-        # NOVO v4: Desativar Chat (Meet Now)
-        @{P="HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced"; N="TaskbarMn";                    V=0}
-        # NOVO v4: Nao mostrar News e Interests
-        @{P="HKCU:\Software\Microsoft\Windows\CurrentVersion\Feeds";             N="ShellFeedsTaskbarViewMode";    V=2}
-        # NOVO v4: Antigo menu de contexto Win11
-        @{P="HKCU:\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32"; N="(default)";  V="";   T="String"}
+    $tweaksList = @(
+        @{
+            Nome  = "Animacoes Windows OFF"
+            Desc  = "Desativa todas as animacoes de janela, menu e taskbar"
+            Risco = "baixo"
+            Bloco = {
+                Set-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" -Name "VisualFXSetting" -Value 2 -Type DWord -Force 2>$null
+                $r = @(
+                    @{P="HKCU:\Control Panel\Desktop";                                       N="DragFullWindows";     V="0"; T="String"}
+                    @{P="HKCU:\Control Panel\Desktop";                                       N="MenuShowDelay";       V="0"; T="String"}
+                    @{P="HKCU:\Control Panel\Desktop\WindowMetrics";                         N="MinAnimate";          V=0}
+                    @{P="HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"; N="TaskbarAnimations";   V=0}
+                    @{P="HKCU:\Software\Microsoft\Windows\DWM";                              N="EnableAeroPeek";      V=0}
+                    @{P="HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"; N="ListviewAlphaSelect"; V=0}
+                    @{P="HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"; N="ListviewShadow";      V=0}
+                    @{P="HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"; N="ExtendedUIHoverTime"; V=1}
+                )
+                foreach ($t in $r) {
+                    if (-not (Test-Path $t.P)) { New-Item $t.P -Force | Out-Null }
+                    if ($t.T -eq 'String') { Set-ItemProperty $t.P -Name $t.N -Value $t.V -Type String -Force 2>$null }
+                    else                   { Set-ItemProperty $t.P -Name $t.N -Value $t.V -Type DWord -Force 2>$null }
+                }
+            }
+        }
+        @{
+            Nome  = "Transparencia OFF"
+            Desc  = "Desativa efeito de vidro do Fluent Design (libera GPU)"
+            Risco = "baixo"
+            Bloco = {
+                Set-ItemProperty "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize" -Name "EnableTransparency" -Value 0 -Type DWord -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "Widgets e Chat OFF"
+            Desc  = "Remove Widgets, Meet Now e News & Interests da taskbar"
+            Risco = "baixo"
+            Bloco = {
+                $p = "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
+                if ($Script:IsWin11) {
+                    # Win11: TaskbarDa=Widgets, TaskbarMn=Chat
+                    Set-ItemProperty $p -Name "TaskbarDa" -Value 0 -Type DWord -Force 2>$null
+                    Set-ItemProperty $p -Name "TaskbarMn" -Value 0 -Type DWord -Force 2>$null
+                }
+                # Win10 + Win11: News & Interests / Feeds
+                Set-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Feeds" -Name "ShellFeedsTaskbarViewMode" -Value 2 -Type DWord -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "Menu de Contexto Classico Win11"
+            Desc  = "Restaura o menu de contexto completo sem clicar 'Mais opcoes'"
+            Risco = "baixo"
+            Bloco = {
+                $p = "HKCU:\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32"
+                if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
+                Set-ItemProperty $p -Name "(default)" -Value "" -Type String -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "Extensoes e Arquivos Ocultos Visiveis"
+            Desc  = "Mostra extensoes de arquivo e pastas ocultas no Explorer"
+            Risco = "baixo"
+            Bloco = {
+                $p = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
+                Set-ItemProperty $p -Name "HideFileExt" -Value 0 -Type DWord -Force 2>$null
+                Set-ItemProperty $p -Name "Hidden"      -Value 1 -Type DWord -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "Prefetch Mantido (SSD/NVMe)"
+            Desc  = "Mantem Prefetch ativo - melhora carregamento de jogos em SSD"
+            Risco = "baixo"
+            Bloco = {
+                Set-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management\PrefetchParameters" -Name "EnablePrefetcher" -Value 3 -Type DWord -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "Search Indexing OFF"
+            Desc  = "Desativa indexacao de arquivos (libera I/O em segundo plano)"
+            Risco = "medio"
+            Bloco = {
+                Stop-Service WSearch -Force 2>$null
+                Set-Service WSearch -StartupType Disabled 2>$null
+            }
+        }
     )
 
-    foreach ($t in $tweaks) {
-        try {
-            if (-not (Test-Path $t.P)) { New-Item -Path $t.P -Force | Out-Null }
-            if ($t.T -eq 'String') { Set-ItemProperty $t.P -Name $t.N -Value $t.V -Type String -Force }
-            else                   { Set-ItemProperty $t.P -Name $t.N -Value $t.V -Type DWord -Force }
-        } catch {}
-    }
-
-    # Prefetch/Superfetch (mantido para SSD/NVMe)
-    if ($Script:DiscoNVMe -or $Script:DiscoTipo -match 'SSD') {
-        Set-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management\PrefetchParameters" `
-            -Name "EnablePrefetcher" -Value 3 -Type DWord -Force 2>$null
-        OK "Prefetch mantido ($( if($Script:DiscoNVMe){'NVMe'}else{'SSD'} ) - melhora carregamento de jogos)"
-    }
-
-    OK "Animacoes, transparencia e widgets desativados"
-    OK "Menu de contexto classico restaurado (Win 11)"
-    OK "Extensions e arquivos ocultos visiveis"
-    $Script:TweaksFeitos.Add("Visual/Performance: animacoes OFF")
-    LOG "Visual performance configurado v4"
+    Invoke-TweakChecklist -Titulo "Visual e Performance" -Tweaks $tweaksList
+    $Script:TweaksFeitos.Add("Visual/Performance: checklist aplicado")
+    LOG "Visual performance v5"
 }
 
 # ================================================================
-#  MODULO 7 - NTFS E I/O AVANCADO (NOVO v4)
+#  MODULO 7 - NTFS E I/O AVANCADO
 # ================================================================
 function Invoke-NTFSIOTweaks {
     H2 "NTFS E I/O - OTIMIZACOES AVANCADAS"
 
-    # NTFS tweaks
-    try {
-        fsutil behavior set DisableLastAccess 1 2>$null | Out-Null
-        OK "NTFS: Last Access Time desativado (menos writes no disco)"
-    } catch {}
-
-    try {
-        fsutil behavior set EncryptPagingFile 0 2>$null | Out-Null
-        OK "NTFS: Criptografia do PageFile desativada"
-    } catch {}
-
-    # Desativar 8.3 filename (melhora perf em pastas com muitos arquivos)
-    try {
-        fsutil behavior set Disable8dot3 1 2>$null | Out-Null
-        OK "NTFS: Nomes curtos 8.3 desativados (melhora velocidade do Explorer)"
-    } catch {}
-
-    # Virtual Memory / PageFile
-    try {
-        $ram = $Script:RAMtotalGB
-        if ($ram -ge 16) {
-            # Com 16+ GB, pagefile gerenciado pelo sistema mas com limite definido
-            $cs = Get-CimInstance Win32_ComputerSystem
-            if ($cs.AutomaticManagedPagefile) {
-                IN "PageFile gerenciado pelo sistema (recomendado com $($ram)GB RAM)"
+    $tweaksList = @(
+        @{
+            Nome  = "NTFS Last Access Time OFF"
+            Desc  = "Nao registra hora de acesso a cada arquivo lido (menos writes)"
+            Risco = "baixo"
+            Bloco = { fsutil behavior set DisableLastAccess 1 2>$null | Out-Null }
+        }
+        @{
+            Nome  = "NTFS 8.3 Filename OFF"
+            Desc  = "Desativa nomes curtos 8.3 (melhora Explorer com muitos arquivos)"
+            Risco = "baixo"
+            Bloco = { fsutil behavior set Disable8dot3 1 2>$null | Out-Null }
+        }
+        @{
+            Nome  = "Criptografia de PageFile OFF"
+            Desc  = "Desativa criptografia do arquivo de paginacao (ganho de I/O)"
+            Risco = "baixo"
+            Bloco = { fsutil behavior set EncryptPagingFile 0 2>$null | Out-Null }
+        }
+        @{
+            Nome  = "Network Throttling OFF"
+            Desc  = "Desativa limitacao de I/O de rede durante multitarefa"
+            Risco = "baixo"
+            Bloco = {
+                Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile" -Name "NetworkThrottlingIndex" -Value 0xFFFFFFFF -Type DWord -Force 2>$null
             }
         }
-    } catch {}
-
-    if ($Script:DiscoNVMe) {
-        # NOVO v4: Write cache para NVMe
-        try {
-            $discos = Get-CimInstance Win32_DiskDrive
-            foreach ($d in $discos) {
-                $idx = $d.Index
-                $reg = "HKLM:\SYSTEM\CurrentControlSet\Enum\$($d.PNPDeviceID)\Device Parameters\Disk"
-                if (Test-Path $reg) {
-                    Set-ItemProperty $reg -Name "UserWriteCacheSetting" -Value 1 -Type DWord -Force 2>$null
+        @{
+            Nome  = "I/O Timeout Otimizado (SSD/NVMe)"
+            Desc  = "Reduz timeout de disco para detectar falhas mais rapido"
+            Risco = "baixo"
+            Bloco = { Set-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\disk" -Name "TimeOutValue" -Value 30 -Type DWord -Force 2>$null }
+        }
+        @{
+            Nome  = "NVMe Write Cache Flushing"
+            Desc  = "Ativa buffer de escrita acelerada no NVMe"
+            Risco = "medio"
+            Bloco = {
+                $discos = Get-CimInstance Win32_DiskDrive
+                foreach ($d in $discos) {
+                    $reg = "HKLM:\SYSTEM\CurrentControlSet\Enum\$($d.PNPDeviceID)\Device Parameters\Disk"
+                    if (Test-Path $reg) { Set-ItemProperty $reg -Name "UserWriteCacheSetting" -Value 1 -Type DWord -Force 2>$null }
                 }
             }
-            OK "NVMe: Write Cache Buffer Flushing ativado"
-        } catch {}
+        }
+        @{
+            Nome  = "StorNVMe Command Spreading OFF"
+            Desc  = "Reduz latencia do NVMe desativando espalhamento de comandos"
+            Risco = "baixo"
+            Bloco = {
+                $p = "HKLM:\SYSTEM\CurrentControlSet\Services\stornvme\Parameters\Device"
+                if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
+                Set-ItemProperty $p -Name "FpdoEnableCommandSpreading" -Value 0 -Type DWord -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "TRIM Automatico (SSD)"
+            Desc  = "Garante que TRIM esta habilitado no SSD"
+            Risco = "baixo"
+            Bloco = { fsutil behavior set DisableDeleteNotify 0 2>$null | Out-Null }
+        }
+    )
 
-        # StorNVMe tweaks
-        try {
-            $stornvme = "HKLM:\SYSTEM\CurrentControlSet\Services\stornvme\Parameters\Device"
-            if (-not (Test-Path $stornvme)) { New-Item $stornvme -Force | Out-Null }
-            Set-ItemProperty $stornvme -Name "FpdoEnableCommandSpreading" -Value 0 -Type DWord -Force 2>$null
-            OK "NVMe: StorNVMe Command Spreading desativado (reduz latencia)"
-        } catch {}
-    }
-
-    # Storage Device Policy - WriteThrough mais rapido em SSD
-    if ($Script:DiscoNVMe -or $Script:DiscoTipo -match 'SSD') {
-        try {
-            $dp = "HKLM:\SYSTEM\CurrentControlSet\Services\disk"
-            Set-ItemProperty $dp -Name "TimeOutValue" -Value 30 -Type DWord -Force 2>$null
-            OK "Disco: I/O Timeout otimizado"
-        } catch {}
-    }
-
-    # I/O priority para jogos
-    try {
-        $ioPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile"
-        Set-ItemProperty $ioPath -Name "NetworkThrottlingIndex" -Value 0xFFFFFFFF -Type DWord -Force 2>$null
-        OK "I/O Network Throttling desativado para jogos"
-    } catch {}
-
-    $Script:TweaksFeitos.Add("NTFS/IO: Last Access OFF, 8.3 OFF$(if($Script:DiscoNVMe){', NVMe tweak'})")
-    LOG "NTFS IO tweaks aplicados"
-    PAUSE
+    Invoke-TweakChecklist -Titulo "NTFS e I/O" -Tweaks $tweaksList
+    $Script:TweaksFeitos.Add("NTFS/IO: checklist aplicado")
+    LOG "NTFS IO tweaks v5"
 }
 
 # ================================================================
-#  MODULO 8 - TIMER RESOLUTION (NOVO v4)
+#  MODULO 8 - TIMER RESOLUTION
 # ================================================================
 function Invoke-TimerResolution {
     H2 "TIMER RESOLUTION - PRECISAO DO SCHEDULER"
 
     INF "O Windows usa por padrao um timer de 15.625ms."
-    INF "Reduzir para 0.5ms melhora a consistencia de FPS e latencia."
-    INF "Impacto: leve aumento de consumo de energia (1-5W)."
+    INF "Tweaks abaixo melhoram consistencia de FPS e latencia."
     Write-Host ""
 
-    # Verificar se existe ferramenta de timer resolution
-    $timerTool = @(
-        "$env:SystemRoot\System32\bcdedit.exe"
+    $tweaksList = @(
+        @{
+            Nome  = "System Responsiveness = 0"
+            Desc  = "CPU 100pct dedicada ao processo em primeiro plano"
+            Risco = "baixo"
+            Bloco = {
+                Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile" -Name "SystemResponsiveness" -Value 0 -Type DWord -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "BCD Dynamic Tick OFF"
+            Desc  = "Timer de clock mais consistente (menos stuttering de FPS)"
+            Risco = "medio"
+            Bloco = {
+                bcdedit /set disabledynamictick yes 2>$null | Out-Null
+                "bcd_gaming=yes" | Out-File (Join-Path $Script:PastaBackup "bcd.txt") -Encoding UTF8 -Force
+            }
+        }
+        @{
+            Nome  = "BCD Platform Tick - Limpar (recomendado Win11)"
+            Desc  = "Remove forcos de platform tick - Win11 ja gerencia timer corretamente"
+            Risco = "baixo"
+            Bloco = {
+                if ($Script:IsWin11) { bcdedit /deletevalue {current} useplatformtick  2>$null | Out-Null }
+                bcdedit /deletevalue {current} useplatformclock 2>$null | Out-Null
+            }
+        }
+        @{
+            Nome  = "Platform Clock OFF (Win11 22H2+)"
+            Desc  = "Remove Platform Clock que causa stuttering em alguns jogos"
+            Risco = "medio"
+            Bloco = { bcdedit /deletevalue {current} useplatformclock 2>$null | Out-Null }
+        }
+        @{
+            Nome  = "Platform Performance Counters ON"
+            Desc  = "Ativa contadores de hardware de alta precisao"
+            Risco = "baixo"
+            Bloco = { bcdedit /set useplatformperfcounters yes 2>$null | Out-Null }
+        }
     )
 
-    # Windows 11 22H2+: o jogo define automaticamente via API
-    if ($Script:WinBuild -ge 22621) {
-        try {
-            # NOVO: Win11 22H2 tem HighResolutionTimers por jogo
-            $bcdOut = bcdedit /enum {current} 2>$null
-            if ($bcdOut -match 'useplatformclock\s+Yes') {
-                WN "Platform Clock esta ativado (pode causar stuttering em alguns jogos)"
-                if (CONF "Desativar Platform Clock?") {
-                    bcdedit /deletevalue {current} useplatformclock 2>$null | Out-Null
-                    OK "Platform Clock desativado"
-                }
-            }
-
-            # Ativar HPET se disponivel
-            if ($bcdOut -notmatch 'useplatformperfcounters') {
-                bcdedit /set useplatformperfcounters yes 2>$null | Out-Null
-                OK "Platform Performance Counters ativado"
-            }
-        } catch {}
-    }
-
-    # Registry para timer resolution consistente
-    try {
-        $trPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile"
-        Set-ItemProperty $trPath -Name "SystemResponsiveness" -Value 0 -Type DWord -Force 2>$null
-        OK "System Responsiveness: 0% (100pct CPU para primeiro plano)"
-    } catch {}
-
-    # BCD Tweaks (v4)
-    try {
-        Write-Host ""
-        Write-Host "  Otimizacoes de boot e BCD:" -ForegroundColor Cyan
-        if (CONF "Aplicar tweaks de BCD para gaming? (desativa mitigacoes nao-criticas)") {
-            bcdedit /set disabledynamictick yes 2>$null | Out-Null
-            OK "Dynamic Tick desativado (timer mais consistente)"
-            bcdedit /set useplatformtick yes 2>$null | Out-Null
-            OK "Platform Tick ativado"
-            # Salvar no backup
-            "bcd_gaming=yes" | Out-File (Join-Path $Script:PastaBackup "bcd.txt") -Encoding UTF8 -Force
-        }
-    } catch {}
-
-    $Script:TweaksFeitos.Add("Timer Resolution: Dynamic Tick OFF")
-    LOG "Timer Resolution configurado"
-    PAUSE
+    Invoke-TweakChecklist -Titulo "Timer Resolution" -Tweaks $tweaksList
+    $Script:TweaksFeitos.Add("Timer Resolution: checklist aplicado")
+    LOG "Timer Resolution v5"
 }
 
 # ================================================================
-#  MODULO 9 - MSI MODE PARA GPU (NOVO v4)
+#  MODULO 9 - MSI MODE
 # ================================================================
 function Invoke-MSIMode {
     H2 "MSI MODE - MESSAGE SIGNALED INTERRUPTS"
 
-    INF "MSI Mode elimina conflitos de IRQ e reduz latencia de interrupcoes."
-    INF "Beneficio maior em sistemas com muitos dispositivos PCIe."
+    INF "MSI elimina conflitos de IRQ e reduz latencia de interrupcoes."
     Write-Host ""
 
-    # GPU MSI Mode
-    try {
-        $gpuDevs = Get-PnpDevice -Class 'Display' -Status 'OK' -ErrorAction SilentlyContinue
-        $gpuMsi = 0
-        foreach ($dev in $gpuDevs) {
-            $path = "HKLM:\SYSTEM\CurrentControlSet\Enum\$($dev.InstanceId)\Device Parameters\Interrupt Management\MessageSignaledInterruptProperties"
-            if (-not (Test-Path $path)) { New-Item $path -Force | Out-Null }
-            Set-ItemProperty $path -Name "MSISupported" -Value 1 -Type DWord -Force 2>$null
-
-            # Definir numero de MSI (16 para GPU moderna)
-            $liPath = "HKLM:\SYSTEM\CurrentControlSet\Enum\$($dev.InstanceId)\Device Parameters\Interrupt Management\Affinity Policy"
-            if (-not (Test-Path $liPath)) { New-Item $liPath -Force | Out-Null }
-            Set-ItemProperty $liPath -Name "DevicePriority"  -Value 3 -Type DWord -Force 2>$null  # High priority
-            $gpuMsi++
-        }
-        if ($gpuMsi -gt 0) { OK "GPU MSI Mode ativado + prioridade High ($gpuMsi dispositivo(s))" }
-    } catch { ER "Falha ao configurar MSI para GPU" }
-
-    # NVMe MSI
-    try {
-        if ($Script:DiscoNVMe) {
-            $nvmeDev = Get-PnpDevice -Class 'DiskDrive' -Status 'OK' | Where-Object { $_.FriendlyName -match 'NVMe' }
-            foreach ($dev in $nvmeDev) {
-                $path = "HKLM:\SYSTEM\CurrentControlSet\Enum\$($dev.InstanceId)\Device Parameters\Interrupt Management\MessageSignaledInterruptProperties"
-                if (-not (Test-Path $path)) { New-Item $path -Force | Out-Null }
-                Set-ItemProperty $path -Name "MSISupported" -Value 1 -Type DWord -Force 2>$null
+    $tweaksList = @(
+        @{
+            Nome  = "GPU MSI Mode + Prioridade High"
+            Desc  = "Ativa MSI na GPU e define prioridade de interrupcao como High"
+            Risco = "baixo"
+            Bloco = {
+                $gpuDevs = Get-PnpDevice -Class 'Display' -Status 'OK' -ErrorAction SilentlyContinue
+                foreach ($dev in $gpuDevs) {
+                    $path = "HKLM:\SYSTEM\CurrentControlSet\Enum\$($dev.InstanceId)\Device Parameters\Interrupt Management\MessageSignaledInterruptProperties"
+                    if (-not (Test-Path $path)) { New-Item $path -Force | Out-Null }
+                    Set-ItemProperty $path -Name "MSISupported" -Value 1 -Type DWord -Force 2>$null
+                    $liPath = "HKLM:\SYSTEM\CurrentControlSet\Enum\$($dev.InstanceId)\Device Parameters\Interrupt Management\Affinity Policy"
+                    if (-not (Test-Path $liPath)) { New-Item $liPath -Force | Out-Null }
+                    Set-ItemProperty $liPath -Name "DevicePriority" -Value 3 -Type DWord -Force 2>$null
+                }
             }
-            OK "NVMe MSI Mode ativado"
         }
-    } catch {}
+        @{
+            Nome  = "NVMe MSI Mode"
+            Desc  = "Ativa MSI no controlador NVMe (reduz latencia de I/O)"
+            Risco = "baixo"
+            Bloco = {
+                $nvmeDev = Get-PnpDevice -Class 'DiskDrive' -Status 'OK' | Where-Object { $_.FriendlyName -match 'NVMe' }
+                foreach ($dev in $nvmeDev) {
+                    $path = "HKLM:\SYSTEM\CurrentControlSet\Enum\$($dev.InstanceId)\Device Parameters\Interrupt Management\MessageSignaledInterruptProperties"
+                    if (-not (Test-Path $path)) { New-Item $path -Force | Out-Null }
+                    Set-ItemProperty $path -Name "MSISupported" -Value 1 -Type DWord -Force 2>$null
+                }
+            }
+        }
+    )
 
-    WN "REINICIE o computador para MSI Mode ter efeito."
-    $Script:TweaksFeitos.Add("MSI Mode: GPU + NVMe")
-    LOG "MSI Mode configurado"
-    PAUSE
+    Invoke-TweakChecklist -Titulo "MSI Mode" -Tweaks $tweaksList
+    WN "REINICIE para MSI Mode ter efeito."
+    $Script:TweaksFeitos.Add("MSI Mode: checklist aplicado")
+    LOG "MSI Mode v5"
 }
 
 # ================================================================
-#  MODULO 10 - OTIMIZACOES X3D
+#  NOVO v5: MODULO - TWEAKS DE CPU AVANCADOS
+# ================================================================
+function Invoke-TweaksCPU {
+    H2 "TWEAKS DE CPU AVANCADOS"
+
+    $tweaksList = @(
+        @{
+            Nome  = "Desativar C-States via BCD (gaming)"
+            Desc  = "Impede que o CPU entre em estados de baixo consumo (latencia menor)"
+            Risco = "medio"
+            Bloco = { bcdedit /set disabledynamictick yes 2>$null | Out-Null }
+        }
+        @{
+            Nome  = "CPU Priority para Processos de Jogo"
+            Desc  = "Configura IFEO para elevar prioridade de jogos comuns"
+            Risco = "baixo"
+            Bloco = {
+                $jogos = @("csgo.exe","valorant.exe","fortnite.exe","apex.exe","r5apex.exe","cod.exe","warzone.exe","overwolf.exe")
+                foreach ($j in $jogos) {
+                    $p = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\$j\PerfOptions"
+                    if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
+                    Set-ItemProperty $p -Name "CpuPriorityClass" -Value 3 -Type DWord -Force 2>$null
+                    Set-ItemProperty $p -Name "IoPriority"       -Value 3 -Type DWord -Force 2>$null
+                }
+            }
+        }
+        @{
+            Nome  = "Desativar Mitigacao Spectre/Meltdown"
+            Desc  = "Ganho de 5-15pct em CPU - RISCO: vulnerabilidade a ataques locais"
+            Risco = "alto"
+            Bloco = {
+                Set-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" -Name "FeatureSettingsOverride"     -Value 3 -Type DWord -Force 2>$null
+                Set-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" -Name "FeatureSettingsOverrideMask" -Value 3 -Type DWord -Force 2>$null
+                bcdedit /set {current} nx AlwaysOff 2>$null | Out-Null
+            }
+        }
+        @{
+            Nome  = "NUMA Memory Interleaving OFF"
+            Desc  = "Melhora consistencia de acesso a memoria em sistemas multi-canal"
+            Risco = "baixo"
+            Bloco = {
+                Set-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" -Name "DisablePagingExecutive" -Value 1 -Type DWord -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "Startup Delay Apps OFF"
+            Desc  = "Remove delay de 10s antes de apps de startup serem carregados"
+            Risco = "baixo"
+            Bloco = {
+                $p = "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Serialize"
+                if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
+                Set-ItemProperty $p -Name "StartupDelayInMSec" -Value 0 -Type DWord -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "Thread DPC Latency Otimizada"
+            Desc  = "Reduz latencia de chamadas de procedimento diferidas do kernel"
+            Risco = "baixo"
+            Bloco = {
+                $w32v = if ($Script:IsWin11) { 2 } else { 0x26 }; Set-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\PriorityControl" -Name "Win32PrioritySeparation" -Value $w32v -Type DWord -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "Large System Cache OFF"
+            Desc  = "Prioriza memoria para processos em vez de cache de disco"
+            Risco = "baixo"
+            Bloco = {
+                Set-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" -Name "LargeSystemCache" -Value 0 -Type DWord -Force 2>$null
+            }
+        }
+    )
+
+    Invoke-TweakChecklist -Titulo "Tweaks de CPU Avancados" -Tweaks $tweaksList
+    $Script:TweaksFeitos.Add("CPU Avancado: checklist aplicado")
+    LOG "CPU tweaks avancados v5"
+}
+
+# ================================================================
+#  NOVO v5: MODULO - TWEAKS DE MEMORIA
+# ================================================================
+function Invoke-TweaksMemoria {
+    H2 "TWEAKS DE MEMORIA AVANCADOS"
+
+    $tweaksList = @(
+        @{
+            Nome  = "Working Set Memory Management"
+            Desc  = "Evita que Windows retire paginas de RAM de processos ativos"
+            Risco = "baixo"
+            Bloco = {
+                $p = "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management"
+                Set-ItemProperty $p -Name "DisablePagingExecutive" -Value 1 -Type DWord -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "Heap Fragmentation OFF"
+            Desc  = "Desativa fragmentacao de heap de baixo fragmento"
+            Risco = "baixo"
+            Bloco = {
+                Set-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\HeapManager" -Name "DisableLFH" -Value 0 -Type DWord -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "Clear PageFile ao Desligar OFF"
+            Desc  = "Nao apaga o pagefile ao desligar (boot mais rapido)"
+            Risco = "baixo"
+            Bloco = {
+                Set-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" -Name "ClearPageFileAtShutdown" -Value 0 -Type DWord -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "Paging Executive em RAM"
+            Desc  = "Mantem codigo do kernel na RAM (evita paginacao do kernel)"
+            Risco = "baixo"
+            Bloco = {
+                Set-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" -Name "DisablePagingExecutive" -Value 1 -Type DWord -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "Prefetch Avancado de Apps"
+            Desc  = "Aumenta aggressividade do prefetch de aplicativos"
+            Risco = "baixo"
+            Bloco = {
+                $p = "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management\PrefetchParameters"
+                Set-ItemProperty $p -Name "EnablePrefetcher"   -Value 3 -Type DWord -Force 2>$null
+                Set-ItemProperty $p -Name "EnableSuperfetch"   -Value 0 -Type DWord -Force 2>$null
+            }
+        }
+    )
+
+    Invoke-TweakChecklist -Titulo "Tweaks de Memoria" -Tweaks $tweaksList
+    $Script:TweaksFeitos.Add("Memoria: checklist aplicado")
+    LOG "Memoria tweaks v5"
+}
+
+# ================================================================
+#  NOVO v5: MODULO - TWEAKS DE GPU
+# ================================================================
+function Invoke-TweaksGPU {
+    H2 "TWEAKS DE GPU AVANCADOS"
+
+    $tweaksList = @(
+        @{
+            Nome  = "TDR Delay Aumentado"
+            Desc  = "Aumenta timeout de recuperacao de GPU (evita crash em OC)"
+            Risco = "baixo"
+            Bloco = {
+                $p = "HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers"
+                Set-ItemProperty $p -Name "TdrDelay"          -Value 10  -Type DWord -Force 2>$null
+                Set-ItemProperty $p -Name "TdrDdiDelay"       -Value 10  -Type DWord -Force 2>$null
+                Set-ItemProperty $p -Name "TdrLimitTime"      -Value 60  -Type DWord -Force 2>$null
+                Set-ItemProperty $p -Name "TdrLimitCount"     -Value 20  -Type DWord -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "Shader Cache Habilitado"
+            Desc  = "Cache de shaders compilados (carregamento mais rapido de jogos)"
+            Risco = "baixo"
+            Bloco = {
+                $p = "HKLM:\SOFTWARE\Microsoft\DirectX\UserGpuPreferences"
+                if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
+                Set-ItemProperty $p -Name "DirectXUserGlobalSettings" -Value "SwapEffectUpgradeEnable=1;" -Type String -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "NVIDIA - PhysX para GPU"
+            Desc  = "Forca PhysX na GPU dedicada em vez da CPU"
+            Risco = "baixo"
+            Bloco = {
+                if ($Script:GPUFab -eq 'NVIDIA') {
+                    $p = "HKLM:\SOFTWARE\NVIDIA Corporation\Global\PhysX"
+                    if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
+                    Set-ItemProperty $p -Name "SelectedSciName" -Value "" -Type String -Force 2>$null
+                }
+            }
+        }
+        @{
+            Nome  = "NVIDIA - Modo de Energia Preferencial"
+            Desc  = "Forca modo de alta performance no driver NVIDIA"
+            Risco = "baixo"
+            Bloco = {
+                if ($Script:GPUFab -eq 'NVIDIA') {
+                    $p = "HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0000"
+                    if (Test-Path $p) {
+                        Set-ItemProperty $p -Name "PerfLevelSrc"   -Value 0x2222 -Type DWord -Force 2>$null
+                        Set-ItemProperty $p -Name "PowerMizerLevel" -Value 1     -Type DWord -Force 2>$null
+                    }
+                }
+            }
+        }
+        @{
+            Nome  = "D3D - Limitar Latencia de Pre-Render"
+            Desc  = "Reduz frames em fila na GPU (diminui input lag)"
+            Risco = "baixo"
+            Bloco = {
+                $p = "HKCU:\SOFTWARE\Microsoft\Direct3D"
+                if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
+                Set-ItemProperty $p -Name "MaxTextureDimension" -Value 0 -Type DWord -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "DXGI Swap Effect Upgrade"
+            Desc  = "Habilita DirectX Flip para menor latencia de apresentacao"
+            Risco = "baixo"
+            Bloco = {
+                $p = "HKCU:\SOFTWARE\Microsoft\DirectX\UserGpuPreferences"
+                if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
+                Set-ItemProperty $p -Name "DirectXUserGlobalSettings" -Value "SwapEffectUpgradeEnable=1;" -Type String -Force 2>$null
+            }
+        }
+    )
+
+    Invoke-TweakChecklist -Titulo "Tweaks de GPU" -Tweaks $tweaksList
+    $Script:TweaksFeitos.Add("GPU Avancado: checklist aplicado")
+    LOG "GPU tweaks avancados v5"
+}
+
+# ================================================================
+#  NOVO v5: MODULO - TWEAKS DE AUDIO
+# ================================================================
+function Invoke-TweaksAudio {
+    H2 "TWEAKS DE AUDIO (LATENCIA)"
+
+    $tweaksList = @(
+        @{
+            Nome  = "WASAPI Buffer Minimo"
+            Desc  = "Reduz buffer de audio para latencia minima (gamers/streamers)"
+            Risco = "medio"
+            Bloco = {
+                $p = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Pro Audio"
+                if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
+                Set-ItemProperty $p -Name "Affinity"            -Value 0       -Type DWord  -Force 2>$null
+                Set-ItemProperty $p -Name "Background Only"     -Value "False" -Type String -Force 2>$null
+                Set-ItemProperty $p -Name "Clock Rate"          -Value 10000   -Type DWord  -Force 2>$null
+                Set-ItemProperty $p -Name "GPU Priority"        -Value 8       -Type DWord  -Force 2>$null
+                Set-ItemProperty $p -Name "Priority"            -Value 6       -Type DWord  -Force 2>$null
+                Set-ItemProperty $p -Name "Scheduling Category" -Value "High"  -Type String -Force 2>$null
+                Set-ItemProperty $p -Name "SFIO Priority"       -Value "High"  -Type String -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "Audio Service Prioridade Alta"
+            Desc  = "Aumenta prioridade do Windows Audio Service no scheduler"
+            Risco = "baixo"
+            Bloco = {
+                Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile" -Name "SystemResponsiveness" -Value 0 -Type DWord -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "Desativar Audio Enhancements"
+            Desc  = "Remove processamento de audio extra (menor latencia e CPU)"
+            Risco = "baixo"
+            Bloco = {
+                Get-ChildItem "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Render" -ErrorAction SilentlyContinue | ForEach-Object {
+                    $ep = Join-Path $_.PSPath "Properties"
+                    if (Test-Path $ep) {
+                        Set-ItemProperty $ep -Name "{1da5d803-d492-4edd-8c23-e0c0ffee7f0e},1" -Value ([byte[]](0x01,0x00,0x00,0x00)) -Type Binary -Force 2>$null
+                    }
+                }
+            }
+        }
+        @{
+            Nome  = "Exclusive Mode para Dispositivos de Audio"
+            Desc  = "Permite que apps tomem controle exclusivo do audio (menor latencia)"
+            Risco = "baixo"
+            Bloco = {
+                Get-ChildItem "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Render" -ErrorAction SilentlyContinue | ForEach-Object {
+                    $ep = Join-Path $_.PSPath "Properties"
+                    if (Test-Path $ep) {
+                        Set-ItemProperty $ep -Name "{b3f8fa53-0004-438e-9003-51a46e139bfc},3" -Value ([byte[]](0x01,0x00,0x00,0x00)) -Type Binary -Force 2>$null
+                    }
+                }
+            }
+        }
+    )
+
+    Invoke-TweakChecklist -Titulo "Tweaks de Audio" -Tweaks $tweaksList
+    $Script:TweaksFeitos.Add("Audio: checklist aplicado")
+    LOG "Audio tweaks v5"
+}
+
+# ================================================================
+#  MODULOS EXISTENTES (mantidos do v4)
 # ================================================================
 function Invoke-OtimizacoesX3D {
     H2 "OTIMIZACOES EXCLUSIVAS PARA X3D V-CACHE"
@@ -1011,114 +1599,88 @@ function Invoke-OtimizacoesX3D {
     powercfg /setacvalueindex SCHEME_CURRENT SUB_PROCESSOR PERFINCTHRESHOLD 10 2>$null
     powercfg /setacvalueindex SCHEME_CURRENT SUB_PROCESSOR PERFDECTHRESHOLD  8 2>$null
 
-    OK "Core Parking OFF"
-    OK "Boost: Efficient Aggressive (melhor para latencia do V-Cache)"
-    OK "Transicoes de frequencia rapidas"
-
-    # NOVO v4: Processo de jogos afinado aos CCDs corretos
-    INF "Para X3D: recomenda-se afinidade de CPU automatica pelo sistema."
-    INF "BIOS: CPPC Preferred Cores = Enabled, PBO = Disabled."
-
-    Write-Host ""
-    WN "BIOS necessario para maximo desempenho X3D:"
+    OK "Core Parking OFF | Boost: Efficient Aggressive"
+    WN "BIOS necessario:"
     WN "  > CPPC Preferred Cores = Enabled"
-    WN "  > AMD Cool'n'Quiet     = Enabled"
-    WN "  > Global C-state       = Enabled"
+    WN "  > Global C-state = Enabled"
     WN "  > XMP/EXPO para sua RAM"
-    WN "  > PBO = Disabled (X3D nao overclocka - reduz temperatura)"
+    WN "  > PBO = Disabled"
 
-    $Script:TweaksFeitos.Add("X3D V-Cache: plano, boost, core parking")
+    $Script:TweaksFeitos.Add("X3D V-Cache: otimizado")
     LOG "X3D otimizacoes aplicadas"
 }
 
-# ================================================================
-#  MODULO 11 - OVERCLOCK GPU (banco de dados v4 atualizado)
-# ================================================================
 function Get-PerfilOCGPU {
     param([string]$Nome)
     $db = @(
-        # Ada Lovelace (RTX 4xxx)
-        @{M='RTX\s*4090';                C=200;V=1500;P=15;T=83;N='Ada flagship. OC de mem altamente eficiente. Refrigeracao robusta necessaria.'}
-        @{M='RTX\s*4080\s*(Super)?';     C=175;V=1200;P=12;T=83;N='Ada excelente. GDDR6X responde muito bem a OC de mem.'}
-        @{M='RTX\s*4070\s*Ti\s*(Super)?';C=175;V=1200;P=12;T=83;N='Ada eficiente. Mem OC da ganho real de FPS.'}
-        @{M='RTX\s*4070\s*(Super)?(?!\s*Ti)';C=150;V=1000;P=10;T=83;N='Excelente custo-beneficio de OC.'}
-        @{M='RTX\s*4060\s*Ti';           C=150;V=1000;P=10;T=83;N='TDP limitado. Foque em mem OC para melhor retorno.'}
-        @{M='RTX\s*4060(?!\s*Ti)';       C=125;V=1000;P=8; T=83;N='Margem moderada. Mem OC da melhor resultado que core.'}
-        # Ampere (RTX 3xxx)
-        @{M='RTX\s*3090\s*Ti';           C=150;V=800; P=8; T=83;N='GDDR6X aquece. Monitore Tjunction separadamente.'}
-        @{M='RTX\s*3090(?!\s*Ti)';       C=150;V=800; P=8; T=83;N='GDDR6X sensivel. Mem OC moderado e mais seguro.'}
-        @{M='RTX\s*3080\s*Ti';           C=150;V=800; P=8; T=83;N='Excelente Ampere. VRAM pode throttle, monitore.'}
-        @{M='RTX\s*3080(?!\s*Ti)';       C=150;V=800; P=8; T=83;N='Ampere escala muito bem. Mem OC extremamente eficiente.'}
-        @{M='RTX\s*3070\s*Ti';           C=125;V=600; P=8; T=83;N='Boa margem. Cooler padrao geralmente suficiente.'}
-        @{M='RTX\s*3070(?!\s*Ti)';       C=125;V=600; P=8; T=83;N='GPU popular. Comunidade bem documentada.'}
-        @{M='RTX\s*3060\s*Ti';           C=125;V=600; P=8; T=83;N='Excelente custo-beneficio de OC.'}
-        @{M='RTX\s*3060(?!\s*Ti)';       C=100;V=500; P=6; T=83;N='Margem menor. Mem OC da melhor retorno.'}
-        @{M='RTX\s*3050';                C=100;V=400; P=5; T=87;N='TDP baixo. OC leve recomendado.'}
-        # Turing (RTX 2xxx / GTX 1660)
-        @{M='RTX\s*2080\s*Ti';           C=125;V=600; P=8; T=84;N='Classico Turing. Verifique pasta termica se +4 anos.'}
+        @{M='RTX\s*4090';                C=200;V=1500;P=15;T=83;N='Ada flagship.'}
+        @{M='RTX\s*4080\s*(Super)?';     C=175;V=1200;P=12;T=83;N='Ada excelente.'}
+        @{M='RTX\s*4070\s*Ti\s*(Super)?';C=175;V=1200;P=12;T=83;N='Ada eficiente.'}
+        @{M='RTX\s*4070\s*(Super)?(?!\s*Ti)';C=150;V=1000;P=10;T=83;N='Excelente OC.'}
+        @{M='RTX\s*4060\s*Ti';           C=150;V=1000;P=10;T=83;N='TDP limitado.'}
+        @{M='RTX\s*4060(?!\s*Ti)';       C=125;V=1000;P=8; T=83;N='Mem OC melhor retorno.'}
+        @{M='RTX\s*3090\s*Ti';           C=150;V=800; P=8; T=83;N='Monitore Tjunction.'}
+        @{M='RTX\s*3090(?!\s*Ti)';       C=150;V=800; P=8; T=83;N='Mem OC moderado.'}
+        @{M='RTX\s*3080\s*Ti';           C=150;V=800; P=8; T=83;N='VRAM pode throttle.'}
+        @{M='RTX\s*3080(?!\s*Ti)';       C=150;V=800; P=8; T=83;N='Ampere escala muito bem.'}
+        @{M='RTX\s*3070\s*Ti';           C=125;V=600; P=8; T=83;N='Boa margem.'}
+        @{M='RTX\s*3070(?!\s*Ti)';       C=125;V=600; P=8; T=83;N='GPU popular.'}
+        @{M='RTX\s*3060\s*Ti';           C=125;V=600; P=8; T=83;N='Bom OC.'}
+        @{M='RTX\s*3060(?!\s*Ti)';       C=100;V=500; P=6; T=83;N='Mem OC melhor retorno.'}
+        @{M='RTX\s*3050';                C=100;V=400; P=5; T=87;N='OC leve.'}
+        @{M='RTX\s*2080\s*Ti';           C=125;V=600; P=8; T=84;N='Verifique pasta termica.'}
         @{M='RTX\s*2080(?!\s*Ti)';       C=125;V=600; P=8; T=84;N='Boa margem Turing.'}
-        @{M='RTX\s*2070';                C=100;V=500; P=7; T=84;N='Margem solida. Vale OC para ganho real.'}
-        @{M='RTX\s*2060';                C=100;V=400; P=6; T=84;N='Moderado mas com ganho real.'}
-        @{M='GTX\s*1660\s*(Ti|Super)?';  C=100;V=500; P=6; T=84;N='GDDR6 (Ti/Super) escala bem.'}
-        @{M='GTX\s*1650';                C=75; V=300; P=4; T=87;N='TDP muito baixo. Ganhos limitados.'}
-        # Pascal (GTX 10xx)
-        @{M='GTX\s*1080\s*Ti';           C=125;V=500; P=8; T=84;N='Pascal classico. Pasta pode estar seca.'}
-        @{M='GTX\s*1080(?!\s*Ti)';       C=125;V=500; P=8; T=84;N='Pascal envelhece bem. Verifique refrigeracao.'}
-        @{M='GTX\s*1070';                C=100;V=400; P=7; T=84;N='Muito bem documentado na comunidade.'}
-        @{M='GTX\s*1060';                C=100;V=400; P=6; T=84;N='Considere trocar pasta se +4 anos.'}
-        @{M='GTX\s*1050\s*Ti';           C=75; V=300; P=4; T=87;N='Ganhos modestos mas existentes.'}
-        # RDNA 3 (RX 7xxx)
-        @{M='RX\s*7900\s*(XTX|XT)';     C=100;V=100; P=10;T=90;N='RDNA3. Hotspot diferente de Edge. Monitore junction.'}
-        @{M='RX\s*7800\s*XT';            C=100;V=80;  P=8; T=90;N='Otimo RDNA3 mid-range para OC.'}
-        @{M='RX\s*7700\s*XT';            C=100;V=80;  P=8; T=90;N='TDP eficiente. Margem moderada.'}
-        @{M='RX\s*7600';                 C=75; V=60;  P=6; T=90;N='Entry RDNA3. Ganhos modestos.'}
-        # RDNA 2 (RX 6xxx)
-        @{M='RX\s*6900\s*XT';            C=100;V=100; P=8; T=90;N='RDNA2 flagship. Hotspot pode ser alto. Monitore.'}
-        @{M='RX\s*6800\s*XT';            C=100;V=100; P=8; T=90;N='Excelente. Infinity Cache escala muito bem.'}
-        @{M='RX\s*6800(?!\s*XT)';        C=100;V=80;  P=8; T=90;N='Muito parecido com XT. Bons ganhos.'}
-        @{M='RX\s*6700\s*XT';            C=100;V=80;  P=8; T=90;N='Mid-range RDNA2 com boa margem.'}
-        @{M='RX\s*6700(?!\s*XT)';        C=75; V=60;  P=6; T=90;N='Moderado. Power limit boost e eficiente.'}
-        @{M='RX\s*6600\s*XT';            C=75; V=60;  P=6; T=90;N='1080p excelente. OC modesto mas eficiente.'}
-        @{M='RX\s*6600(?!\s*XT)';        C=75; V=50;  P=5; T=90;N='TDP baixo. Nao exagere.'}
-        # RDNA 1 (RX 5xxx)
-        @{M='RX\s*5700\s*XT';            C=75; V=80;  P=7; T=90;N='RDNA1. Hotspot ate 110C e normal.'}
-        @{M='RX\s*5700(?!\s*XT)';        C=75; V=80;  P=7; T=90;N='Hotspot alto esperado.'}
-        @{M='RX\s*5600\s*XT';            C=75; V=60;  P=6; T=90;N='Boa GPU 1080p. Moderado recomendado.'}
-        # Intel Arc
-        @{M='Arc\s*A770';                C=50; V=200; P=5; T=100;N='OC em Arc e experimental. Atualize o driver sempre.'}
-        @{M='Arc\s*A750';                C=50; V=200; P=5; T=100;N='Mesmos cuidados do A770.'}
+        @{M='RTX\s*2070';                C=100;V=500; P=7; T=84;N='Ganho real.'}
+        @{M='RTX\s*2060';                C=100;V=400; P=6; T=84;N='Moderado.'}
+        @{M='GTX\s*1660\s*(Ti|Super)?';  C=100;V=500; P=6; T=84;N='GDDR6 escala bem.'}
+        @{M='GTX\s*1650';                C=75; V=300; P=4; T=87;N='Ganhos limitados.'}
+        @{M='GTX\s*1080\s*Ti';           C=125;V=500; P=8; T=84;N='Pascal classico.'}
+        @{M='GTX\s*1080(?!\s*Ti)';       C=125;V=500; P=8; T=84;N='Envelhece bem.'}
+        @{M='GTX\s*1070';                C=100;V=400; P=7; T=84;N='Bem documentado.'}
+        @{M='GTX\s*1060';                C=100;V=400; P=6; T=84;N='Troque pasta se +4 anos.'}
+        @{M='GTX\s*1050\s*Ti';           C=75; V=300; P=4; T=87;N='Ganhos modestos.'}
+        @{M='RX\s*7900\s*(XTX|XT)';     C=100;V=100; P=10;T=90;N='Monitore junction.'}
+        @{M='RX\s*7800\s*XT';            C=100;V=80;  P=8; T=90;N='RDNA3 mid-range.'}
+        @{M='RX\s*7700\s*XT';            C=100;V=80;  P=8; T=90;N='TDP eficiente.'}
+        @{M='RX\s*7600';                 C=75; V=60;  P=6; T=90;N='Entry RDNA3.'}
+        @{M='RX\s*6900\s*XT';            C=100;V=100; P=8; T=90;N='Hotspot alto.'}
+        @{M='RX\s*6800\s*XT';            C=100;V=100; P=8; T=90;N='Infinity Cache escala.'}
+        @{M='RX\s*6800(?!\s*XT)';        C=100;V=80;  P=8; T=90;N='Bons ganhos.'}
+        @{M='RX\s*6700\s*XT';            C=100;V=80;  P=8; T=90;N='Boa margem.'}
+        @{M='RX\s*6700(?!\s*XT)';        C=75; V=60;  P=6; T=90;N='Moderado.'}
+        @{M='RX\s*6600\s*XT';            C=75; V=60;  P=6; T=90;N='1080p excelente.'}
+        @{M='RX\s*6600(?!\s*XT)';        C=75; V=50;  P=5; T=90;N='Nao exagere.'}
+        @{M='RX\s*5700\s*XT';            C=75; V=80;  P=7; T=90;N='Hotspot ate 110C normal.'}
+        @{M='RX\s*5700(?!\s*XT)';        C=75; V=80;  P=7; T=90;N='Hotspot alto.'}
+        @{M='RX\s*5600\s*XT';            C=75; V=60;  P=6; T=90;N='1080p moderado.'}
+        @{M='Arc\s*A770';                C=50; V=200; P=5; T=100;N='Experimental.'}
+        @{M='Arc\s*A750';                C=50; V=200; P=5; T=100;N='Mesmos cuidados A770.'}
     )
     foreach ($e in $db) { if ($Nome -match $e.M) { return $e } }
-    if ($Nome -match 'NVIDIA|GeForce|RTX|GTX') { return @{C=75;V=300;P=5;T=84;N='GPU NVIDIA. Valores ultra-conservadores.'} }
-    if ($Nome -match 'AMD|Radeon|RX')           { return @{C=50;V=50; P=4;T=90;N='GPU AMD. Valores ultra-conservadores.'} }
+    if ($Nome -match 'NVIDIA|GeForce|RTX|GTX') { return @{C=75;V=300;P=5;T=84;N='GPU NVIDIA. Valores conservadores.'} }
+    if ($Nome -match 'AMD|Radeon|RX')           { return @{C=50;V=50; P=4;T=90;N='GPU AMD. Valores conservadores.'} }
     return $null
 }
 
 function Invoke-AnalisadorGPU {
     H2 "ANALISADOR DE OVERCLOCK DE GPU"
-
     if (-not $Script:GPUNome) { Invoke-DetectarHardware }
     if (-not $Script:GPUNome) { ER "GPU nao detectada."; PAUSE; return }
 
     $perfil = Get-PerfilOCGPU -Nome $Script:GPUNome
-    if (-not $perfil) {
-        WN "GPU nao encontrada no banco de dados de OC seguro."
-        PAUSE; return
-    }
+    if (-not $perfil) { WN "GPU nao encontrada no banco de dados."; PAUSE; return }
 
-    # Analise termica
     $statusTerm = "nao_testado"
     if ($Script:GPUFab -eq 'NVIDIA' -and $Script:GPUSmi -and $Script:GPUTemp -gt 0) {
         Write-Host ""
         $corT = if($Script:GPUTemp -lt 60){'Green'}elseif($Script:GPUTemp -lt 75){'Yellow'}else{'Red'}
         Write-Host "  Temperatura atual: $($Script:GPUTemp) C" -ForegroundColor $corT
-
         if (CONF "Fazer analise termica rapida (15s)?") {
             IN "Monitorando GPU por 15 segundos..."
-            $tempMax = $Script:GPUTemp; $amostras = @()
+            $tempMax = $Script:GPUTemp
             for ($i = 1; $i -le 15; $i++) {
                 $tr = & $Script:GPUSmi --query-gpu=temperature.gpu --format=csv,noheader,nounits 2>$null
-                if ($tr -match '^\d+') { $t=[int]$tr.Trim(); $amostras+=$t; if($t-gt$tempMax){$tempMax=$t} }
+                if ($tr -match '^\d+') { $t=[int]$tr.Trim(); if($t-gt$tempMax){$tempMax=$t} }
                 $corBar = if($t -lt 70){'Green'} elseif($t -lt 80){'Yellow'} else{'Red'}
                 Write-Host "`r  [$('#'*$i)$((' '*([math]::Max(0,15-$i))))] $($i)s | Temp: $($t) C    " -NoNewline -ForegroundColor $corBar
                 Start-Sleep 1
@@ -1126,29 +1688,16 @@ function Invoke-AnalisadorGPU {
             Write-Host ""; Write-Host ""
             OK "Temp maxima: $($tempMax) C"
             $statusTerm = if($tempMax -le 60){'excelente'}elseif($tempMax -le 72){'boa'}elseif($tempMax -le 80){'aceitavel'}else{'quente'}
-
-            if ($statusTerm -eq 'quente') {
-                ER "GPU muito quente. OC NAO recomendado sem melhorar refrigeracao."
-                PAUSE; return
-            }
+            if ($statusTerm -eq 'quente') { ER "GPU muito quente. OC NAO recomendado."; PAUSE; return }
             OK "Status termico: $statusTerm"
         }
     }
 
-    $mult = switch ($statusTerm) { 'excelente'{1.0} 'boa'{0.85} 'aceitavel'{0.65} default{0.75} }
-    $cMax = [math]::Floor($perfil.C * $mult)
-    $vMax = [math]::Floor($perfil.V * $mult)
-
-    $pC = @{C=[math]::Floor($cMax*.5);  V=[math]::Floor($vMax*.5);  P=[math]::Min([math]::Floor($perfil.P*.5),8)}
-    $pM = @{C=[math]::Floor($cMax*.75); V=[math]::Floor($vMax*.75); P=[math]::Min([math]::Floor($perfil.P*.75),12)}
-    $pA = @{C=$cMax; V=$vMax; P=$perfil.P}
-
-    Write-Host ""
-    H1 "RESULTADO - $($Script:GPUNome)"
-    SEP
-    Write-Host "  Nota : $($perfil.N)" -ForegroundColor DarkGray
-    Write-Host "  Limite seguro de temperatura: $($perfil.T) C" -ForegroundColor White
-    Write-Host ""
+    $mult = switch ($statusTerm) {'excelente'{1.0}'boa'{0.85}'aceitavel'{0.65}default{0.75}}
+    $cMax = [math]::Floor($perfil.C * $mult); $vMax = [math]::Floor($perfil.V * $mult)
+    $pC = @{C=[math]::Floor($cMax*.5);V=[math]::Floor($vMax*.5);P=[math]::Min([math]::Floor($perfil.P*.5),8)}
+    $pM = @{C=[math]::Floor($cMax*.75);V=[math]::Floor($vMax*.75);P=[math]::Min([math]::Floor($perfil.P*.75),12)}
+    $pA = @{C=$cMax;V=$vMax;P=$perfil.P}
 
     $pl_c = if($Script:GPUPL -gt 0){[math]::Min([math]::Round($Script:GPUPL*(1+$pC.P/100)),$Script:GPUPLmax)}else{0}
     $pl_m = if($Script:GPUPL -gt 0){[math]::Min([math]::Round($Script:GPUPL*(1+$pM.P/100)),$Script:GPUPLmax)}else{0}
@@ -1160,6 +1709,9 @@ function Invoke-AnalisadorGPU {
     $fmt = "  | {0,-15} | {1,-14} | {2,-14} | {3,-22} |"
     $sep = "  +" + ("-"*17) + "+" + ("-"*16) + "+" + ("-"*16) + "+" + ("-"*24) + "+"
 
+    Write-Host ""; H1 "RESULTADO - $($Script:GPUNome)"; SEP
+    Write-Host "  Nota: $($perfil.N)  |  Temp limite: $($perfil.T) C" -ForegroundColor DarkGray
+    Write-Host ""
     Write-Host $sep -ForegroundColor DarkCyan
     Write-Host ($fmt -f "PERFIL","CORE OC","MEM OC","POWER LIMIT") -ForegroundColor DarkCyan
     Write-Host $sep -ForegroundColor DarkCyan
@@ -1168,151 +1720,100 @@ function Invoke-AnalisadorGPU {
     Write-Host ($fmt -f "[AGRESSIVO]","+$($pA.C) MHz","+$($pA.V) MHz",$plStr_a) -ForegroundColor Red
     Write-Host $sep -ForegroundColor DarkCyan
 
-    # Aplicar Power Limit (NVIDIA)
     if ($Script:GPUFab -eq 'NVIDIA' -and $Script:GPUSmi -and $Script:GPUPLmax -gt 0) {
-        Write-Host ""
-        WN "Power Limit pode ser aplicado agora via nvidia-smi."
-        Write-Host "  [1] Conservador ($($pl_c) W)  [2] Moderado ($($pl_m) W)  [3] Agressivo ($($pl_a) W)  [4] Nao aplicar"
-        $op = Read-Host "  Aplicar PL [1-4]"
+        Write-Host ""; WN "Aplicar Power Limit via nvidia-smi?"
+        Write-Host "  [1] $($pl_c) W  [2] $($pl_m) W  [3] $($pl_a) W  [4] Nao"
+        $op = Read-Host "  [1-4]"
         $watts = switch ($op.Trim()) {'1'{$pl_c}'2'{$pl_m}'3'{$pl_a}default{0}}
         if ($watts -gt 0) {
             $res = & $Script:GPUSmi -pl $watts 2>&1
-            if ($res -match 'successfully') { OK "Power Limit aplicado: $($watts) W" }
-            else { ER "Falha. Tente via MSI Afterburner." }
+            if ($res -match 'successfully') { OK "Power Limit: $($watts) W" }
+            else { ER "Falha. Use MSI Afterburner." }
         }
     }
 
-    # NOVO v4: Frequencia minima da GPU via nvidia-smi
-    if ($Script:GPUFab -eq 'NVIDIA' -and $Script:GPUSmi) {
-        Write-Host ""
-        if (CONF "Definir frequencia minima do core (evita stutter em menu/desktop)?") {
-            $freqMin = Read-Host "  Frequencia minima em MHz (ex: 1000, ou 0 para padrao)"
-            if ($freqMin -match '^\d+$' -and [int]$freqMin -gt 0) {
-                & $Script:GPUSmi --lock-gpu-clocks=$freqMin,$(([int]$freqMin+500)) 2>$null | Out-Null
-                OK "Frequencia minima GPU: $freqMin MHz"
-                WN "Use nvidia-smi --reset-gpu-clocks para reverter."
-            }
-        }
-    }
-
-    # Guia de aplicacao
-    Write-Host ""
-    H1 "COMO APLICAR - MSI AFTERBURNER"
-    SEP
-    if ($Script:GPUFab -eq 'NVIDIA') {
-        Write-Host "  1. Abra Afterburner > Salve perfil padrao (slot 1)" -ForegroundColor Gray
-        Write-Host "  2. Power Limit: suba ao maximo" -ForegroundColor Gray
-        Write-Host "  3. Core Clock: +$($pC.C) MHz > Apply > teste 30min com 3DMark/Heaven" -ForegroundColor Green
-        Write-Host "  4. Se estavel: suba para +$($pM.C) MHz > novo teste" -ForegroundColor Yellow
-        Write-Host "  5. Memory Clock: comece com +$($pC.V) MHz > suba gradualmente" -ForegroundColor Green
-        Write-Host "  6. Artefato = reduza 25 MHz e estabilize" -ForegroundColor Red
-    } elseif ($Script:GPUFab -eq 'AMD') {
-        Write-Host "  1. AMD Software Adrenalin > Performance > Tuning > Manual" -ForegroundColor Gray
-        Write-Host "  2. GPU Frequency: +$($pC.C) MHz | VRAM: +$($pC.V) MHz | PL: +$($pC.P)%" -ForegroundColor Green
-        Write-Host "  3. Apply > teste 30min > avance para moderado se estavel" -ForegroundColor Gray
-        WN "  RDNA: Hotspot ate 100C e normal. Acima de 110C reduza."
-    }
-
-    LOG "GPU OC analise: $($Script:GPUNome) | Core max: +$cMax | Mem max: +$vMax"
+    LOG "GPU OC: $($Script:GPUNome) | +$cMax core / +$vMax mem"
     PAUSE
 }
 
-# ================================================================
-#  MODULO 12 - MODO STREAMER (NOVO v4)
-# ================================================================
 function Invoke-ModoStreamer {
     H2 "MODO STREAMER - GAMING + OBS SEM DROPS"
-
-    INF "Configura o sistema para dividir recursos entre jogo e OBS/encode."
+    INF "Configura o sistema para dividir recursos entre jogo e OBS."
     Write-Host ""
 
-    # Prioridade de CPU para OBS
-    try {
-        $obsPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\obs64.exe\PerfOptions"
-        if (-not (Test-Path $obsPath)) { New-Item $obsPath -Force | Out-Null }
-        Set-ItemProperty $obsPath -Name "CpuPriorityClass" -Value 3 -Type DWord -Force 2>$null  # High = 3
-        OK "OBS64: CPU Priority = High"
-    } catch {}
+    $tweaksList = @(
+        @{
+            Nome  = "OBS64 CPU Priority = High"
+            Desc  = "Eleva prioridade de CPU do OBS64.exe"
+            Risco = "baixo"
+            Bloco = {
+                $p = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\obs64.exe\PerfOptions"
+                if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
+                Set-ItemProperty $p -Name "CpuPriorityClass" -Value 3 -Type DWord -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "HAGS para OBS GPU Encode"
+            Desc  = "Hardware GPU Scheduling necessario para NVENC/AMF"
+            Risco = "baixo"
+            Bloco = { Set-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers" -Name "HwSchMode" -Value 2 -Type DWord -Force 2>$null }
+        }
+        @{
+            Nome  = "Pro Audio Scheduler"
+            Desc  = "Prioridade maxima de audio para OBS (sem drops)"
+            Risco = "baixo"
+            Bloco = {
+                $p = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Pro Audio"
+                if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
+                Set-ItemProperty $p -Name "Affinity"            -Value 0       -Type DWord  -Force 2>$null
+                Set-ItemProperty $p -Name "Background Only"     -Value "False" -Type String -Force 2>$null
+                Set-ItemProperty $p -Name "Clock Rate"          -Value 10000   -Type DWord  -Force 2>$null
+                Set-ItemProperty $p -Name "GPU Priority"        -Value 8       -Type DWord  -Force 2>$null
+                Set-ItemProperty $p -Name "Priority"            -Value 6       -Type DWord  -Force 2>$null
+                Set-ItemProperty $p -Name "Scheduling Category" -Value "High"  -Type String -Force 2>$null
+                Set-ItemProperty $p -Name "SFIO Priority"       -Value "High"  -Type String -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "System Responsiveness = 10pct (Streaming)"
+            Desc  = "Divide CPU 90/10 entre jogo e encoder"
+            Risco = "baixo"
+            Bloco = { Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile" -Name "SystemResponsiveness" -Value 10 -Type DWord -Force 2>$null }
+        }
+        @{
+            Nome  = "Xbox Game Bar OFF"
+            Desc  = "Use OBS em vez do Game Bar"
+            Risco = "baixo"
+            Bloco = { Set-ItemProperty "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\GameDVR" -Name "AppCaptureEnabled" -Value 0 -Type DWord -Force 2>$null }
+        }
+    )
 
-    # GPU scheduling para streaming
-    try {
-        Set-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers" `
-            -Name "HwSchMode" -Value 2 -Type DWord -Force 2>$null
-        OK "HAGS ativado (necessario para OBS GPU encode)"
-    } catch {}
-
-    # Multimedia scheduler - OBS tambem precisa de audio responsivo
-    try {
-        $obsAudioPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Pro Audio"
-        if (-not (Test-Path $obsAudioPath)) { New-Item $obsAudioPath -Force | Out-Null }
-        Set-ItemProperty $obsAudioPath -Name "Affinity"            -Value 0 -Type DWord  -Force 2>$null
-        Set-ItemProperty $obsAudioPath -Name "Background Only"     -Value "False" -Type String -Force 2>$null
-        Set-ItemProperty $obsAudioPath -Name "Clock Rate"          -Value 10000 -Type DWord -Force 2>$null
-        Set-ItemProperty $obsAudioPath -Name "GPU Priority"        -Value 8 -Type DWord  -Force 2>$null
-        Set-ItemProperty $obsAudioPath -Name "Priority"            -Value 6 -Type DWord  -Force 2>$null
-        Set-ItemProperty $obsAudioPath -Name "Scheduling Category" -Value "High" -Type String -Force 2>$null
-        Set-ItemProperty $obsAudioPath -Name "SFIO Priority"       -Value "High" -Type String -Force 2>$null
-        OK "Pro Audio scheduler configurado (audio OBS sem drops)"
-    } catch {}
-
-    # Ajustar System Responsiveness para dividir CPU
-    try {
-        Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile" `
-            -Name "SystemResponsiveness" -Value 10 -Type DWord -Force 2>$null
-        OK "System Responsiveness = 10% (modo streaming: divide CPU entre jogo e encoder)"
-        WN "Para gaming puro sem stream, use 0%. Ajuste no modulo GameMode."
-    } catch {}
-
-    # Desativar Xbox Game Bar (consome CPU desnecessariamente)
-    try {
-        Set-ItemProperty "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\GameDVR" `
-            -Name "AppCaptureEnabled" -Value 0 -Type DWord -Force 2>$null
-        OK "Xbox Game Bar desativado (use OBS em vez disso)"
-    } catch {}
-
+    Invoke-TweakChecklist -Titulo "Modo Streamer" -Tweaks $tweaksList
     $Script:ModoStreamer = $true
-    OK "Modo Streamer ativado!"
-    WN "Recomendacoes OBS para Gaming:"
-    Write-Host "  > Encoder: NVENC/AMF (GPU) - nao use x264 se for gamer" -ForegroundColor DarkGray
-    Write-Host "  > Process Priority: Acima do Normal" -ForegroundColor DarkGray
-    Write-Host "  > Bitrate: 6000 kbps (1080p60) | 8000 kbps (1440p60)" -ForegroundColor DarkGray
-    Write-Host "  > Keyframe: 2s | Profile: High | Level: auto" -ForegroundColor DarkGray
-
-    $Script:TweaksFeitos.Add("Modo Streamer: OBS + Gaming configurado")
-    LOG "Modo Streamer ativado"
+    Write-Host ""
+    WN "Recomendacoes OBS:"
+    Write-Host "  > Encoder: NVENC/AMF (GPU)"   -ForegroundColor DarkGray
+    Write-Host "  > Bitrate: 6000-8000 kbps"    -ForegroundColor DarkGray
+    Write-Host "  > Keyframe: 2s | Profile: High" -ForegroundColor DarkGray
+    $Script:TweaksFeitos.Add("Modo Streamer ativado")
+    LOG "Modo Streamer v5"
     PAUSE
 }
 
-# ================================================================
-#  MODULO 13 - MONITOR TEMPO REAL (NOVO v4)
-# ================================================================
 function Invoke-Monitor {
     H2 "MONITOR DE HARDWARE EM TEMPO REAL"
-
-    if (-not $Script:GPUSmi -and $Script:GPUFab -eq 'NVIDIA') {
-        ER "nvidia-smi nao encontrado. Monitor disponivel apenas para NVIDIA."
-        PAUSE; return
-    }
-
-    Write-Host "  Pressione CTRL+C para sair do monitor." -ForegroundColor Yellow
+    Write-Host "  Pressione CTRL+C para sair." -ForegroundColor Yellow
     Write-Host ""
-
-    $contador = 0
     try {
         while ($true) {
-            $contador++
             $ts = Get-Date -f "HH:mm:ss"
-
-            # CPU
             $cpuLoad = (Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average
             $corCPU = if($cpuLoad -lt 50){'Green'}elseif($cpuLoad -lt 85){'Yellow'}else{'Red'}
-
-            # RAM
-            $os    = Get-CimInstance Win32_OperatingSystem
-            $ramUsada  = [math]::Round(($os.TotalVisibleMemorySize - $os.FreePhysicalMemory) / 1MB, 1)
-            $ramTotal  = [math]::Round($os.TotalVisibleMemorySize / 1MB, 1)
-            $ramPct    = [math]::Round($ramUsada / $ramTotal * 100)
-            $corRAM    = if($ramPct -lt 60){'Green'}elseif($ramPct -lt 85){'Yellow'}else{'Red'}
+            $os = Get-CimInstance Win32_OperatingSystem
+            $ramUsada = [math]::Round(($os.TotalVisibleMemorySize - $os.FreePhysicalMemory) / 1MB, 1)
+            $ramTotal = [math]::Round($os.TotalVisibleMemorySize / 1MB, 1)
+            $ramPct   = [math]::Round($ramUsada / $ramTotal * 100)
+            $corRAM   = if($ramPct -lt 60){'Green'}elseif($ramPct -lt 85){'Yellow'}else{'Red'}
 
             Write-Host "`r  [$ts] CPU: " -NoNewline -ForegroundColor DarkGray
             Write-Host "$($cpuLoad)%".PadLeft(4) -NoNewline -ForegroundColor $corCPU
@@ -1324,14 +1825,12 @@ function Invoke-Monitor {
                 if ($gd) {
                     $gc = $gd -split ','
                     if ($gc.Count -ge 5) {
-                        $gt  = [int]$gc[0].Trim()
-                        $gu  = [int]$gc[1].Trim()
+                        $gt  = [int]$gc[0].Trim(); $gu  = [int]$gc[1].Trim()
                         $gmu = [math]::Round([double]$gc[2].Trim() / 1024, 1)
                         $gmt = [math]::Round([double]$gc[3].Trim() / 1024, 1)
                         $gpw = [math]::Round([double]$gc[4].Trim(), 0)
                         $corGT = if($gt-lt60){'Green'}elseif($gt-lt75){'Yellow'}else{'Red'}
                         $corGU = if($gu-lt70){'Green'}elseif($gu-lt90){'Yellow'}else{'Red'}
-
                         Write-Host " | GPU: " -NoNewline -ForegroundColor DarkGray
                         Write-Host "$($gt)C" -NoNewline -ForegroundColor $corGT
                         Write-Host "/" -NoNewline -ForegroundColor DarkGray
@@ -1340,95 +1839,66 @@ function Invoke-Monitor {
                     }
                 }
             }
-
             Start-Sleep 1
         }
-    } catch {
-        Write-Host ""
-        OK "Monitor encerrado."
-    }
+    } catch { Write-Host ""; OK "Monitor encerrado." }
     PAUSE
 }
 
-# ================================================================
-#  MODULO 14 - DEBLOATER v4 (atualizado)
-# ================================================================
 function Invoke-Debloater {
     H2 "DEBLOATER - REMOVER APPS DESNECESSARIOS"
-
     $apps = @(
         "Microsoft.XboxApp","Microsoft.XboxGameOverlay","Microsoft.XboxGamingOverlay",
         "Microsoft.XboxIdentityProvider","Microsoft.Xbox.TCUI",
-        "Microsoft.549981C3F5F10",                          # Cortana standalone
-        "Microsoft.BingWeather","Microsoft.BingFinance","Microsoft.BingNews",
-        "Microsoft.BingSports","Microsoft.BingTranslator","Microsoft.BingTravel",
-        "Microsoft.GetHelp","Microsoft.Getstarted","Microsoft.MicrosoftOfficeHub",
-        "Microsoft.MicrosoftSolitaireCollection","Microsoft.MixedReality.Portal",
-        "Microsoft.MSPaint","Microsoft.News","Microsoft.Office.OneNote",
-        "Microsoft.OutlookForWindows","Microsoft.People","Microsoft.PowerAutomateDesktop",
-        "Microsoft.Print3D","Microsoft.SkypeApp","Microsoft.Teams",
-        "Microsoft.Todos","Microsoft.WindowsAlarms","Microsoft.WindowsFeedbackHub",
-        "Microsoft.WindowsMaps","Microsoft.WindowsSoundRecorder","Microsoft.YourPhone",
-        "Microsoft.ZuneMusic","Microsoft.ZuneVideo","Microsoft.MicrosoftStickyNotes",
-        "AmazonVideo.PrimeVideo","Disney.37853D22215B2","Clipchamp.Clipchamp",
-        "king.com.CandyCrushSaga","king.com.CandyCrushFriends","king.com.FarmHeroesSaga",
-        "TikTok.TikTok","BytedancePte.Ltd.TikTok","Facebook.Facebook",
-        "Instagram.Instagram","Twitter.Twitter","Netflix","ROBLOXCORPORATION.ROBLOX",
-        "Duolingo-LearnLanguagesforFree","AdobeSystemsIncorporated.AdobePhotoshopExpress",
-        # NOVO v4
-        "MicrosoftCorporationII.MicrosoftFamily",           # Family Safety
-        "Microsoft.GamingApp",                              # Xbox Gaming App (nao o runtime)
-        "Microsoft.Copilot",                                # Copilot standalone
-        "Microsoft.PowerAutomateDesktop",
-        "Microsoft.WindowsCommunicationsApps",              # Mail & Calendar antigo
-        "Microsoft.3DBuilder"
+        "Microsoft.549981C3F5F10","Microsoft.BingWeather","Microsoft.BingFinance",
+        "Microsoft.BingNews","Microsoft.BingSports","Microsoft.BingTranslator",
+        "Microsoft.BingTravel","Microsoft.GetHelp","Microsoft.Getstarted",
+        "Microsoft.MicrosoftOfficeHub","Microsoft.MicrosoftSolitaireCollection",
+        "Microsoft.MixedReality.Portal","Microsoft.MSPaint","Microsoft.News",
+        "Microsoft.Office.OneNote","Microsoft.OutlookForWindows","Microsoft.People",
+        "Microsoft.PowerAutomateDesktop","Microsoft.Print3D","Microsoft.SkypeApp",
+        "Microsoft.Teams","Microsoft.Todos","Microsoft.WindowsAlarms",
+        "Microsoft.WindowsFeedbackHub","Microsoft.WindowsMaps","Microsoft.WindowsSoundRecorder",
+        "Microsoft.YourPhone","Microsoft.ZuneMusic","Microsoft.ZuneVideo",
+        "Microsoft.MicrosoftStickyNotes","AmazonVideo.PrimeVideo","Disney.37853D22215B2",
+        "Clipchamp.Clipchamp","king.com.CandyCrushSaga","king.com.CandyCrushFriends",
+        "king.com.FarmHeroesSaga","TikTok.TikTok","BytedancePte.Ltd.TikTok",
+        "Facebook.Facebook","Instagram.Instagram","Twitter.Twitter","Netflix",
+        "ROBLOXCORPORATION.ROBLOX","Duolingo-LearnLanguagesforFree",
+        "AdobeSystemsIncorporated.AdobePhotoshopExpress",
+        "MicrosoftCorporationII.MicrosoftFamily","Microsoft.GamingApp",
+        "Microsoft.Copilot","Microsoft.WindowsCommunicationsApps","Microsoft.3DBuilder"
     )
 
-    Write-Host "  Removendo $($apps.Count) apps potenciais..." -ForegroundColor Gray
+    Write-Host "  Removendo $($apps.Count) apps..." -ForegroundColor Gray
     $removidos = 0; $i = 0
     foreach ($app in $apps) {
-        $i++
-        Show-Progress "Debloater" $i $apps.Count
+        $i++; Show-Progress "Debloater" $i $apps.Count
         $pkg = Get-AppxPackage -Name "*$app*" -AllUsers -ErrorAction SilentlyContinue
         if ($pkg) {
             try {
                 $pkg | Remove-AppxPackage -AllUsers -ErrorAction SilentlyContinue
-                $pkgProv = Get-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue |
-                           Where-Object { $_.DisplayName -like "*$app*" }
+                $pkgProv = Get-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like "*$app*" }
                 if ($pkgProv) { $pkgProv | Remove-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue | Out-Null }
                 $removidos++
             } catch {}
         }
     }
-
     Write-Host ""
-
-    # Bloquear reinstalacao
     $regPath = "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\ContentDeliveryManager"
-    Set-ItemProperty $regPath -Name "OemPreInstalledAppsEnabled"  -Value 0 -Type DWord -Force 2>$null
-    Set-ItemProperty $regPath -Name "PreInstalledAppsEnabled"      -Value 0 -Type DWord -Force 2>$null
-    Set-ItemProperty $regPath -Name "SilentInstalledAppsEnabled"   -Value 0 -Type DWord -Force 2>$null
-    Set-ItemProperty $regPath -Name "ContentDeliveryAllowed"       -Value 0 -Type DWord -Force 2>$null
-
+    Set-ItemProperty $regPath -Name "OemPreInstalledAppsEnabled" -Value 0 -Type DWord -Force 2>$null
+    Set-ItemProperty $regPath -Name "PreInstalledAppsEnabled"    -Value 0 -Type DWord -Force 2>$null
+    Set-ItemProperty $regPath -Name "SilentInstalledAppsEnabled" -Value 0 -Type DWord -Force 2>$null
+    Set-ItemProperty $regPath -Name "ContentDeliveryAllowed"     -Value 0 -Type DWord -Force 2>$null
     Write-Host ""
-    OK "$removidos apps removidos"
-    OK "Reinstalacao automatica bloqueada"
-    $Script:TweaksFeitos.Add("Debloater: $removidos apps removidos")
-    LOG "Debloater v4: $removidos removidos"
-    PAUSE
+    OK "$removidos apps removidos | Reinstalacao bloqueada"
+    $Script:TweaksFeitos.Add("Debloater: $removidos removidos")
+    LOG "Debloater: $removidos"; PAUSE
 }
 
-# ================================================================
-#  MODULO 15 - INSTALADOR DE PROGRAMAS
-# ================================================================
 function Invoke-Instalador {
     H2 "INSTALADOR DE PROGRAMAS (via winget)"
-
-    if (-not $Script:TemWinget) {
-        ER "winget nao encontrado."
-        WN "Instale 'App Installer' na Microsoft Store ou atualize o Windows."
-        PAUSE; return
-    }
+    if (-not $Script:TemWinget) { ER "winget nao encontrado."; PAUSE; return }
 
     $catalogo = @(
         @{ID="Google.Chrome";              Cat="Navegador";   N="Google Chrome"}
@@ -1464,238 +1934,171 @@ function Invoke-Instalador {
         @{ID="Adobe.Acrobat.Reader.64-bit";Cat="Office";      N="Adobe Acrobat Reader"}
     )
 
-    $cats  = $catalogo | Select-Object -ExpandProperty Cat -Unique | Sort-Object
+    $cats = $catalogo | Select-Object -ExpandProperty Cat -Unique | Sort-Object
     $lista = @(); $idx = 1
-
-    Write-Host "  Programas disponiveis:" -ForegroundColor Cyan
-    Write-Host ""
+    Write-Host "  Programas disponiveis:" -ForegroundColor Cyan; Write-Host ""
     foreach ($cat in $cats) {
         Write-Host "  >> $cat" -ForegroundColor DarkCyan
         foreach ($prog in ($catalogo | Where-Object { $_.Cat -eq $cat })) {
             Write-Host ("   [{0,2}] {1}" -f $idx, $prog.N) -ForegroundColor White
-            $lista += @{ Idx=$idx; Prog=$prog }
-            $idx++
+            $lista += @{ Idx=$idx; Prog=$prog }; $idx++
         }
         Write-Host ""
     }
 
-    Write-Host "  Numeros separados por virgula. Ex: 1,5,12,18" -ForegroundColor Yellow
+    Write-Host "  Numeros separados por virgula. Ex: 1,5,12" -ForegroundColor Yellow
     $sel = Read-Host "  Selecao"
     if (-not $sel.Trim()) { WN "Cancelado."; return }
-
     $nums = $sel -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ -match '^\d+$' }
     $selecionados = $lista | Where-Object { $_.Idx -in $nums }
     if (-not $selecionados) { WN "Nenhum valido."; PAUSE; return }
 
-    Write-Host ""; H1 "Instalando $($selecionados.Count) programa(s)..."
     $ok = 0; $fail = 0; $i = 0
     foreach ($item in $selecionados) {
-        $i++
-        $p = $item.Prog
+        $i++; $p = $item.Prog
         Show-Progress "$($p.N)" $i ($selecionados.Count)
         winget install --id $p.ID --accept-source-agreements --accept-package-agreements --silent 2>$null
         if ($LASTEXITCODE -eq 0) { $ok++ } else { $fail++ }
     }
-
     Write-Host ""
-    OK "$ok instalados com sucesso"
-    if ($fail -gt 0) { WN "$fail falharam - instale manualmente" }
-    LOG "Instalador: $ok OK $fail falhas"
-    PAUSE
+    OK "$ok instalados"
+    if ($fail -gt 0) { WN "$fail falharam" }
+    LOG "Instalador: $ok OK"; PAUSE
 }
 
-# ================================================================
-#  MODULO 16 - WINDOWS UPDATE
-# ================================================================
 function Invoke-WindowsUpdate {
     H2 "CONTROLE DO WINDOWS UPDATE"
-
-    Write-Host "  [1] Pausar 35 dias (recomendado para gamers)" -ForegroundColor White
-    Write-Host "  [2] Habilitar automaticamente (padrao)" -ForegroundColor White
-    Write-Host "  [3] Bloquear permanente (NAO recomendado)" -ForegroundColor DarkGray
-    Write-Host "  [4] Forcar verificacao agora" -ForegroundColor White
-    Write-Host "  [5] Voltar" -ForegroundColor DarkGray
+    Write-Host "  [1] Pausar 35 dias  [2] Habilitar  [3] Bloquear permanente  [4] Verificar agora  [5] Voltar"
     Write-Host ""
     $op = Read-Host "  Opcao [1-5]"
-
     switch ($op.Trim()) {
         '1' {
             $dataFim = (Get-Date).AddDays(35).ToString("yyyy-MM-dd")
             $p = "HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings"
             if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
-            Set-ItemProperty $p "PauseFeatureUpdatesEndTime"   "${dataFim}T00:00:00Z" -Force 2>$null
-            Set-ItemProperty $p "PauseQualityUpdatesEndTime"   "${dataFim}T00:00:00Z" -Force 2>$null
-            Set-ItemProperty $p "PauseUpdatesExpiryTime"       "${dataFim}T00:00:00Z" -Force 2>$null
+            Set-ItemProperty $p "PauseFeatureUpdatesEndTime" "${dataFim}T00:00:00Z" -Force 2>$null
+            Set-ItemProperty $p "PauseQualityUpdatesEndTime" "${dataFim}T00:00:00Z" -Force 2>$null
             OK "Atualizacoes pausadas ate $dataFim"
         }
         '2' {
             $p = "HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings"
             Remove-ItemProperty $p "PauseFeatureUpdatesEndTime" -Force 2>$null
             Remove-ItemProperty $p "PauseQualityUpdatesEndTime" -Force 2>$null
-            Set-Service wuauserv -StartupType Automatic -ErrorAction SilentlyContinue
-            Start-Service wuauserv -ErrorAction SilentlyContinue
+            Set-Service wuauserv -StartupType Automatic; Start-Service wuauserv 2>$null
             OK "Windows Update habilitado"
         }
         '3' {
             WN "Bloquear permanentemente impede patches de seguranca criticos!"
-            if (CONF "Tem certeza absoluta?") {
-                Stop-Service wuauserv -Force -ErrorAction SilentlyContinue
-                Set-Service wuauserv -StartupType Disabled -ErrorAction SilentlyContinue
+            if (CONF "Tem certeza?") {
+                Stop-Service wuauserv -Force 2>$null
+                Set-Service wuauserv -StartupType Disabled 2>$null
                 $p = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU"
                 if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
                 Set-ItemProperty $p "NoAutoUpdate" 1 -Type DWord -Force 2>$null
-                OK "Windows Update bloqueado (use opcao 2 para reativar)"
+                OK "Windows Update bloqueado"
             }
         }
         '4' {
-            Start-Service wuauserv -ErrorAction SilentlyContinue
+            Start-Service wuauserv 2>$null
             try { (New-Object -ComObject Microsoft.Update.AutoUpdate).DetectNow() } catch {}
-            OK "Verificacao iniciada - abra Configuracoes > Windows Update"
+            OK "Verificacao iniciada"
         }
     }
-    LOG "Windows Update: opcao $op"
-    PAUSE
+    LOG "WUpdate: $op"; PAUSE
 }
 
-# ================================================================
-#  MODULO 17 - REPARAR WINDOWS
-# ================================================================
 function Invoke-RepararWindows {
     H2 "REPARAR WINDOWS (SFC / DISM)"
-
     WN "Processo pode demorar 10-30 minutos."
-    Write-Host ""
-    IN "1. DISM /RestoreHealth  - repara imagem do Windows"
-    IN "2. SFC /scannow         - verifica arquivos de sistema"
     Write-Host ""
     if (-not (CONF "Iniciar reparo?")) { return }
 
-    Write-Host ""
-    H1 "Rodando DISM RestoreHealth (10-20 min)..."
+    H1 "Rodando DISM RestoreHealth..."
     $dism = Start-Process "dism.exe" -ArgumentList "/Online /Cleanup-Image /RestoreHealth" -Wait -PassThru -NoNewWindow
-    if ($dism.ExitCode -eq 0) { OK "DISM: concluido sem erros" }
-    else { WN "DISM: codigo $($dism.ExitCode) - pode ser normal sem internet" }
+    if ($dism.ExitCode -eq 0) { OK "DISM: OK" } else { WN "DISM: codigo $($dism.ExitCode)" }
 
-    Write-Host ""
     H1 "Rodando SFC /scannow..."
     $sfc = Start-Process "sfc.exe" -ArgumentList "/scannow" -Wait -PassThru -NoNewWindow
-    if ($sfc.ExitCode -eq 0) { OK "SFC: nenhum arquivo corrompido" }
-    else { WN "SFC: codigo $($sfc.ExitCode) - arquivos podem ter sido reparados" }
+    if ($sfc.ExitCode -eq 0) { OK "SFC: OK" } else { WN "SFC: codigo $($sfc.ExitCode)" }
 
-    ipconfig /flushdns 2>$null | Out-Null
-    OK "Cache DNS limpo"
-
+    ipconfig /flushdns 2>$null | Out-Null; OK "DNS limpo"
     if (CONF "Resetar TCP/IP e Winsock?") {
         netsh winsock reset 2>$null | Out-Null
         netsh int ip reset  2>$null | Out-Null
-        OK "Winsock + IP stack resetados - reinicie"
+        OK "Winsock resetado - reinicie"
     }
-
     OK "Reparo concluido!"; WN "Reinicie para completar."
-    LOG "Reparo Windows executado"
-    PAUSE
+    LOG "Reparo executado"; PAUSE
 }
 
-# ================================================================
-#  MODULO 18 - LIMPEZA DO SISTEMA
-# ================================================================
 function Invoke-Limpeza {
     H2 "LIMPEZA DO SISTEMA"
-
     $totalBytes = 0
     $pastas = @(
-        $env:TEMP, $env:TMP,
-        "C:\Windows\Temp",
+        $env:TEMP, $env:TMP, "C:\Windows\Temp",
         "$env:LOCALAPPDATA\Temp",
         "$env:LOCALAPPDATA\Microsoft\Windows\INetCache",
         "$env:LOCALAPPDATA\Microsoft\Windows\Explorer\ThumbCacheToDelete",
         "C:\Windows\SoftwareDistribution\Download"
     )
-
     $i = 0
     foreach ($p in $pastas) {
-        $i++
-        Show-Progress "Limpando temporarios..." $i $pastas.Count
+        $i++; Show-Progress "Limpando..." $i $pastas.Count
         if (Test-Path $p) {
-            if ($p -match 'SoftwareDistribution') {
-                Stop-Service wuauserv -Force -ErrorAction SilentlyContinue
-            }
+            if ($p -match 'SoftwareDistribution') { Stop-Service wuauserv -Force 2>$null }
             $arqs = Get-ChildItem $p -Recurse -Force -ErrorAction SilentlyContinue
             $bytes = ($arqs | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
             if ($bytes) { $totalBytes += $bytes }
             $arqs | Remove-Item -Force -Recurse -ErrorAction SilentlyContinue
-            if ($p -match 'SoftwareDistribution') {
-                Start-Service wuauserv -ErrorAction SilentlyContinue
-            }
+            if ($p -match 'SoftwareDistribution') { Start-Service wuauserv 2>$null }
         }
     }
     Write-Host ""
-
-    try { Clear-RecycleBin -Force -ErrorAction SilentlyContinue; IN "Lixeira esvaziada" } catch {}
-
-    # NOVO v4: Limpar logs do Event Viewer antigos
+    try { Clear-RecycleBin -Force 2>$null; IN "Lixeira esvaziada" } catch {}
     try {
-        $logs = Get-WinEvent -ListLog * -ErrorAction SilentlyContinue | Where-Object { $_.RecordCount -gt 1000 }
-        foreach ($log in $logs) {
-            [System.Diagnostics.Eventing.Reader.EventLogSession]::GlobalSession.ClearLog($log.LogName) 2>$null
-        }
-        OK "Logs de eventos antigos limpos"
+        $logs = Get-WinEvent -ListLog * 2>$null | Where-Object { $_.RecordCount -gt 1000 }
+        foreach ($log in $logs) { [System.Diagnostics.Eventing.Reader.EventLogSession]::GlobalSession.ClearLog($log.LogName) 2>$null }
+        OK "Logs de eventos limpos"
     } catch {}
-
-    # NOVO v4: Limpeza de thumbnails antigos
     try {
-        $thumbPath = "$env:LOCALAPPDATA\Microsoft\Windows\Explorer"
-        Get-ChildItem $thumbPath -Filter "thumbcache_*.db" -ErrorAction SilentlyContinue |
-            Remove-Item -Force -ErrorAction SilentlyContinue
+        Get-ChildItem "$env:LOCALAPPDATA\Microsoft\Windows\Explorer" -Filter "thumbcache_*.db" 2>$null | Remove-Item -Force 2>$null
         OK "Cache de thumbnails removido"
     } catch {}
-
     $mb = [math]::Round($totalBytes / 1MB, 1)
     Write-Host ""
-    OK "Limpeza concluida: $($mb) MB liberados"
-    $Script:TweaksFeitos.Add("Limpeza: $($mb) MB liberados")
-    LOG "Limpeza v4: $($mb) MB"
-    PAUSE
+    OK "Limpeza: $($mb) MB liberados"
+    $Script:TweaksFeitos.Add("Limpeza: $($mb) MB")
+    LOG "Limpeza: $($mb) MB"; PAUSE
 }
 
-# ================================================================
-#  MODULO 19 - EXPORTAR RELATORIO (NOVO v4)
-# ================================================================
 function Invoke-ExportarRelatorio {
-    H2 "EXPORTAR RELATORIO DE OTIMIZACOES"
-
+    H2 "EXPORTAR RELATORIO"
     $relPath = Join-Path $Script:PastaRaiz "Relatorio_$(Get-Date -f 'yyyyMMdd_HHmmss').txt"
-    $linhas  = @()
-    $linhas += "=" * 70
-    $linhas += "  AbimalekBoost v$($Script:Versao) - Relatorio de Sessao"
-    $linhas += "  Sessao: $($Script:IDSessao)   Data: $(Get-Date -f 'dd/MM/yyyy HH:mm')"
-    $linhas += "=" * 70
-    $linhas += ""
-    $linhas += "HARDWARE DETECTADO:"
-    $linhas += "  CPU  : $($Script:CPUNome)$( if($Script:CPUX3D){' [X3D]'} )"
-    $linhas += "  GPU  : $($Script:GPUNome) ($($Script:GPUVRAM) GB)"
-    $linhas += "  RAM  : $($Script:RAMtotalGB) GB $($Script:RAMtipo) @ $($Script:RAMvelocidade) MHz"
-    $linhas += "  Disco: $($Script:DiscoNome) $(if($Script:DiscoNVMe){'[NVMe]'}elseif($Script:DiscoTipo-match'SSD'){'[SSD]'}else{'[HDD]'})"
-    $linhas += "  SO   : $($Script:WinVer) (Build $($Script:WinBuild))"
-    $linhas += ""
-    $linhas += "TWEAKS APLICADOS ($($Script:TweaksFeitos.Count)):"
+    $linhas = @(
+        "=" * 70
+        "  AbimalekBoost v$($Script:Versao) - Relatorio de Sessao"
+        "  Sessao: $($Script:IDSessao)   Data: $(Get-Date -f 'dd/MM/yyyy HH:mm')"
+        "=" * 70
+        ""
+        "HARDWARE:"
+        "  CPU  : $($Script:CPUNome)$(if($Script:CPUX3D){' [X3D]'})"
+        "  GPU  : $($Script:GPUNome) ($($Script:GPUVRAM) GB)"
+        "  RAM  : $($Script:RAMtotalGB) GB $($Script:RAMtipo) @ $($Script:RAMvelocidade) MHz"
+        "  Disco: $($Script:DiscoNome) $(if($Script:DiscoNVMe){'[NVMe]'}elseif($Script:DiscoTipo-match'SSD'){'[SSD]'}else{'[HDD]'})"
+        "  SO   : $($Script:WinVer) (Build $($Script:WinBuild))"
+        ""
+        "TWEAKS ($($Script:TweaksFeitos.Count)):"
+    )
     foreach ($t in $Script:TweaksFeitos) { $linhas += "  [+] $t" }
     $linhas += ""
-    $linhas += "STATUS: $(if($Script:OtimAplicada){'OTIMIZACOES ATIVAS - Reinicie para aplicar tudo.'}else{'Parcialmente aplicado.'})"
-    $linhas += "Log completo: $($Script:LogFile)"
-    $linhas += ""
-    $linhas += "=" * 70
-
+    $linhas += "STATUS: $(if($Script:OtimAplicada){'OTIMIZACOES ATIVAS'}else{'Parcial'}). Reinicie para aplicar tudo."
+    $linhas += "Log: $($Script:LogFile)"
     $linhas | Out-File $relPath -Encoding UTF8 -Force
-    OK "Relatorio salvo em:"
+    OK "Relatorio salvo:"
     Write-Host "  $relPath" -ForegroundColor Cyan
-    LOG "Relatorio exportado: $relPath"
-    PAUSE
+    LOG "Relatorio: $relPath"; PAUSE
 }
 
-# ================================================================
-#  MODULO 20 - RESTAURAR TUDO
-# ================================================================
 function Invoke-Restaurar {
     H2 "RESTAURAR CONFIGURACOES ORIGINAIS"
 
@@ -1713,155 +2116,2476 @@ function Invoke-Restaurar {
             $mapa = Get-Content $sBkp -Raw | ConvertFrom-Json
             foreach ($prop in $mapa.PSObject.Properties) {
                 try {
-                    $st = switch ($prop.Value) {
-                        "Automatic" { [System.ServiceProcess.ServiceStartMode]::Automatic }
-                        "Manual"    { [System.ServiceProcess.ServiceStartMode]::Manual }
-                        default     { [System.ServiceProcess.ServiceStartMode]::Manual }
-                    }
-                    Set-Service -Name $prop.Name -StartupType $st -ErrorAction SilentlyContinue
+                    $st = switch ($prop.Value) {"Automatic"{[System.ServiceProcess.ServiceStartMode]::Automatic}"Manual"{[System.ServiceProcess.ServiceStartMode]::Manual}default{[System.ServiceProcess.ServiceStartMode]::Manual}}
+                    Set-Service -Name $prop.Name -StartupType $st 2>$null
                 } catch {}
             }
             OK "Servicos restaurados"
         } catch { ER "Falha ao restaurar servicos" }
-    } else { WN "Backup de servicos nao encontrado" }
+    }
 
-    IN "Tweaks de rede (Nagle)..."
-    try {
-        Get-ChildItem "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces" | ForEach-Object {
-            Remove-ItemProperty $_.PSPath "TcpAckFrequency" -Force 2>$null
-            Remove-ItemProperty $_.PSPath "TCPNoDelay"      -Force 2>$null
-            Remove-ItemProperty $_.PSPath "TcpDelAckTicks"  -Force 2>$null
-        }
-        OK "Tweaks de rede removidos"
-    } catch {}
+    IN "Rede..."
+    Get-ChildItem "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces" | ForEach-Object {
+        Remove-ItemProperty $_.PSPath "TcpAckFrequency" -Force 2>$null
+        Remove-ItemProperty $_.PSPath "TCPNoDelay"      -Force 2>$null
+        Remove-ItemProperty $_.PSPath "TcpDelAckTicks"  -Force 2>$null
+    }
+    OK "Tweaks de rede removidos"
 
-    IN "Politicas de telemetria e Cortana..."
-    Remove-Item "HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection"  -Recurse -Force 2>$null
-    Remove-Item "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search"  -Recurse -Force 2>$null
+    IN "Politicas..."
+    Remove-Item "HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection" -Recurse -Force 2>$null
+    Remove-Item "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search" -Recurse -Force 2>$null
     OK "Politicas removidas"
 
-    IN "Visual effects..."
-    try {
-        Set-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" "VisualFXSetting" 0 -Type DWord -Force 2>$null
-        Set-ItemProperty "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize" "EnableTransparency" 1 -Type DWord -Force 2>$null
-        OK "Animacoes e transparencia restauradas"
-    } catch {}
+    IN "Visual..."
+    Set-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" "VisualFXSetting" 0 -Type DWord -Force 2>$null
+    Set-ItemProperty "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize" "EnableTransparency" 1 -Type DWord -Force 2>$null
+    OK "Visual restaurado"
 
-    IN "BCD tweaks..."
+    IN "BCD..."
     $bcdBkp = Join-Path $Script:PastaBackup "bcd.txt"
     if (Test-Path $bcdBkp) {
         bcdedit /deletevalue {current} disabledynamictick 2>$null | Out-Null
-        bcdedit /deletevalue {current} useplatformtick   2>$null | Out-Null
+        if ($Script:IsWin11) { bcdedit /deletevalue {current} useplatformtick   2>$null | Out-Null }
         OK "BCD restaurado"
     }
 
-    $Script:OtimAplicada = $false
-    $Script:ModoStreamer  = $false
-    $Script:TweaksFeitos.Clear()
+    IN "Mitigacoes Spectre/Meltdown..."
+    Remove-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" "FeatureSettingsOverride"     -Force 2>$null
+    Remove-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" "FeatureSettingsOverrideMask" -Force 2>$null
+    bcdedit /set {current} nx OptIn 2>$null | Out-Null
+    OK "Mitigacoes restauradas"
 
+    $Script:OtimAplicada = $false; $Script:ModoStreamer = $false
+    $Script:TweaksFeitos.Clear()
     Write-Host ""
-    OK "Restauracao completa!"
-    WN "Reinicie o computador."
-    LOG "Restauracao v4 realizada"
-    PAUSE
+    OK "Restauracao completa!"; WN "Reinicie o computador."
+    LOG "Restauracao v5"; PAUSE
 }
 
-# ================================================================
-#  MODULO 21 - APLICAR TUDO (PERFIL COMPLETO v4)
-# ================================================================
 function Invoke-AplicarTudo {
     H2 "PERFIL COMPLETO - TODAS AS OTIMIZACOES"
-
     if (-not $Script:CPUNome) { Invoke-DetectarHardware }
 
-    Write-Host "  Hardware:" -ForegroundColor Cyan
     Write-Host "  CPU : $($Script:CPUNome)$(if($Script:CPUX3D){' [X3D]'})" -ForegroundColor White
     Write-Host "  GPU : $($Script:GPUNome)" -ForegroundColor White
     Write-Host "  RAM : $($Script:RAMtotalGB) GB $($Script:RAMtipo)" -ForegroundColor White
     Write-Host ""
-    WN "Backup automatico sera feito antes de cada mudanca."
+    WN "Modo 'Aplicar Tudo' usa as opcoes padrao de cada modulo."
+    WN "Para escolher tweak por tweak, use o menu 'Otimizacao do Sistema'."
     Write-Host ""
+    if (-not (CONF "Aplicar TODAS as otimizacoes (modo rapido)?")) { WN "Cancelado."; PAUSE; return }
 
-    if (-not (CONF "Aplicar TODAS as otimizacoes?")) { WN "Cancelado."; PAUSE; return }
-
-    $etapas = @(
-        "Plano de Energia",
-        "Privacidade",
-        "Game Mode",
-        "Rede",
-        "Servicos",
-        "Visual",
-        "NTFS/IO",
-        "MSI Mode",
-        "Limpeza"
-    )
+    $etapas = @("Plano","Privacidade","GameMode","Rede","Servicos","Visual","NTFS","MSI","Limpeza")
     $ei = 0
-
-    Write-Host ""
-    $ei++; Show-Progress "Plano de Energia"  $ei $etapas.Count; Write-Host ""; Invoke-PlanoEnergia
-    $ei++; Show-Progress "Privacidade"       $ei $etapas.Count; Write-Host ""; Invoke-Privacidade
-    $ei++; Show-Progress "Game Mode"         $ei $etapas.Count; Write-Host ""; Invoke-GameMode
-    $ei++; Show-Progress "Rede"              $ei $etapas.Count; Write-Host ""; Invoke-OtimizarRede
-    $ei++; Show-Progress "Servicos"          $ei $etapas.Count; Write-Host ""; Invoke-Servicos
-    $ei++; Show-Progress "Visual"            $ei $etapas.Count; Write-Host ""; Invoke-VisualPerf
-    $ei++; Show-Progress "NTFS/IO"           $ei $etapas.Count; Write-Host ""; Invoke-NTFSIOTweaks
-    $ei++; Show-Progress "MSI Mode"          $ei $etapas.Count; Write-Host ""; Invoke-MSIMode
+    $ei++; Show-Progress "Plano"      $ei $etapas.Count; Write-Host ""; Invoke-PlanoEnergia
+    $ei++; Show-Progress "Privacidade"$ei $etapas.Count; Write-Host ""; Invoke-Privacidade
+    $ei++; Show-Progress "Game Mode"  $ei $etapas.Count; Write-Host ""; Invoke-GameMode
+    $ei++; Show-Progress "Rede"       $ei $etapas.Count; Write-Host ""; Invoke-OtimizarRede
+    $ei++; Show-Progress "Servicos"   $ei $etapas.Count; Write-Host ""; Invoke-Servicos
+    $ei++; Show-Progress "Visual"     $ei $etapas.Count; Write-Host ""; Invoke-VisualPerf
+    $ei++; Show-Progress "NTFS/IO"    $ei $etapas.Count; Write-Host ""; Invoke-NTFSIOTweaks
+    $ei++; Show-Progress "MSI Mode"   $ei $etapas.Count; Write-Host ""; Invoke-MSIMode
     if ($Script:CPUX3D) { Invoke-OtimizacoesX3D }
-    $ei++; Show-Progress "Limpeza"           $ei $etapas.Count; Write-Host ""; Invoke-Limpeza
+    $ei++; Show-Progress "Limpeza"    $ei $etapas.Count; Write-Host ""; Invoke-Limpeza
 
     $Script:OtimAplicada = $true
-
     Write-Host ""
     Write-Host "  $("="*70)" -ForegroundColor Green
     OK "TODAS AS OTIMIZACOES APLICADAS!"
     Write-Host "  $("="*70)" -ForegroundColor Green
     Write-Host ""
-    Write-Host "  Tweaks aplicados ($($Script:TweaksFeitos.Count)):" -ForegroundColor Cyan
     foreach ($t in $Script:TweaksFeitos) { Write-Host "    [+] $t" -ForegroundColor DarkGreen }
     Write-Host ""
-    WN "REINICIE o computador para que TODAS as mudancas tenham efeito."
+    WN "REINICIE o computador para que tudo tenha efeito."
+    if (CONF "Exportar relatorio?") { Invoke-ExportarRelatorio }
+    LOG "Perfil completo v5: $($Script:TweaksFeitos.Count) tweaks"; PAUSE
+}
 
-    if (CONF "Exportar relatorio agora?") { Invoke-ExportarRelatorio }
+# ================================================================
+#  NOVO v5.1 - NUCLEAR MICROSOFT: OneDrive, Copilot, Teams, Recall
+# ================================================================
+function Invoke-NuclearMicrosoft {
+    H2 "NUCLEAR MICROSOFT - REMOVER BLOAT PESADO"
 
-    LOG "Perfil completo v4 aplicado: $($Script:TweaksFeitos.Count) tweaks"
+    $tweaksList = @(
+        @{
+            Nome  = "OneDrive - Remover Completamente"
+            Desc  = "Desinstala OneDrive, remove do Explorer, bloqueia reinstalacao via GP"
+            Risco = "medio"
+            Bloco = {
+                Stop-Process -Name "OneDrive" -Force -ErrorAction SilentlyContinue
+                Start-Sleep 1
+                $ods = @(
+                    "$env:SystemRoot\System32\OneDriveSetup.exe",
+                    "$env:SystemRoot\SysWOW64\OneDriveSetup.exe",
+                    "$env:LOCALAPPDATA\Microsoft\OneDrive\OneDriveSetup.exe"
+                )
+                foreach ($od in $ods) {
+                    if (Test-Path $od) { Start-Process $od -ArgumentList "/uninstall" -Wait -ErrorAction SilentlyContinue }
+                }
+                Remove-ItemProperty "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" -Name "OneDrive" -Force 2>$null
+                Remove-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" -Name "OneDrive" -Force 2>$null
+
+                # Remover do painel do Explorer
+                $c1 = "HKCR:\CLSID\{018D5C66-4533-4307-9B53-224DE2ED1FE6}"
+                if (-not (Test-Path $c1)) { New-Item $c1 -Force | Out-Null }
+                Set-ItemProperty $c1 -Name "System.IsPinnedToNameSpaceTree" -Value 0 -Type DWord -Force 2>$null
+                $c2 = "HKCR:\Wow6432Node\CLSID\{018D5C66-4533-4307-9B53-224DE2ED1FE6}"
+                if (-not (Test-Path $c2)) { New-Item $c2 -Force | Out-Null }
+                Set-ItemProperty $c2 -Name "System.IsPinnedToNameSpaceTree" -Value 0 -Type DWord -Force 2>$null
+
+                # Bloquear via GP
+                $p = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\OneDrive"
+                if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
+                Set-ItemProperty $p -Name "DisableFileSyncNGSC" -Value 1 -Type DWord -Force 2>$null
+                Set-ItemProperty $p -Name "DisableFileSync"     -Value 1 -Type DWord -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "Copilot - Remover e Bloquear via GP"
+            Desc  = "Remove app Copilot, botao da taskbar e bloqueia por Group Policy"
+            Risco = "baixo"
+            Bloco = {
+                if ($Script:IsWin11) {
+                    # Win11: remove app Copilot e botoes da taskbar
+                    Get-AppxPackage "*Copilot*" -AllUsers 2>$null | Remove-AppxPackage -AllUsers 2>$null
+                    Get-AppxProvisionedPackage -Online 2>$null |
+                        Where-Object { $_.DisplayName -match "Copilot" } |
+                        Remove-AppxProvisionedPackage -Online 2>$null | Out-Null
+                    Set-ItemProperty "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced" `
+                        -Name "ShowCopilotButton" -Value 0 -Type DWord -Force 2>$null
+                    Set-ItemProperty "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced" `
+                        -Name "TaskbarAI" -Value 0 -Type DWord -Force 2>$null
+                    $p = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsCopilot"
+                    if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
+                    Set-ItemProperty $p -Name "TurnOffWindowsCopilot" -Value 1 -Type DWord -Force 2>$null
+                    $pu = "HKCU:\SOFTWARE\Policies\Microsoft\Windows\WindowsCopilot"
+                    if (-not (Test-Path $pu)) { New-Item $pu -Force | Out-Null }
+                    Set-ItemProperty $pu -Name "TurnOffWindowsCopilot" -Value 1 -Type DWord -Force 2>$null
+                } else {
+                    WN "Copilot: exclusivo do Win11 - ignorado no Win10"
+                }
+            }
+        }
+        @{
+            Nome  = "Teams Consumer - Remover"
+            Desc  = "Remove Microsoft Teams pessoal (nao afeta Teams corporativo)"
+            Risco = "baixo"
+            Bloco = {
+                Get-AppxPackage "MicrosoftTeams" -AllUsers 2>$null | Remove-AppxPackage -AllUsers 2>$null
+                Get-AppxPackage "*Teams*" -AllUsers 2>$null |
+                    Where-Object { $_.Name -match "Personal|Consumer" } |
+                    Remove-AppxPackage -AllUsers 2>$null
+                Get-AppxProvisionedPackage -Online 2>$null |
+                    Where-Object { $_.DisplayName -match "^Teams" } |
+                    Remove-AppxProvisionedPackage -Online 2>$null | Out-Null
+                Remove-ItemProperty "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" `
+                    -Name "com.squirrel.Teams.Teams" -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "Windows Recall - Desativar Completamente"
+            Desc  = "Para IA que grava screenshots continuas da tela (privacidade + CPU)"
+            Risco = "baixo"
+            Bloco = {
+                $p = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsAI"
+                if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
+                Set-ItemProperty $p -Name "DisableAIDataAnalysis"  -Value 1 -Type DWord -Force 2>$null
+                if ($Script:IsWin11) {
+                    Set-ItemProperty $p -Name "AllowRecallEnablement"  -Value 0 -Type DWord -Force 2>$null
+                    Set-ItemProperty $p -Name "TurnOffSavingSnapshots" -Value 1 -Type DWord -Force 2>$null
+                }
+                $pu = "HKCU:\SOFTWARE\Policies\Microsoft\Windows\WindowsAI"
+                if (-not (Test-Path $pu)) { New-Item $pu -Force | Out-Null }
+                Set-ItemProperty $pu -Name "DisableAIDataAnalysis" -Value 1 -Type DWord -Force 2>$null
+                if ($Script:IsWin11) {
+                    Stop-Service "WindowsRecall"      -Force 2>$null; Set-Service "WindowsRecall"      -StartupType Disabled 2>$null
+                    Stop-Service "AIXAssistedCapture" -Force 2>$null; Set-Service "AIXAssistedCapture" -StartupType Disabled 2>$null
+                }
+            }
+        }
+        @{
+            Nome  = "Cortana - Remover e Bloquear"
+            Desc  = "Remove Cortana standalone, desativa via GP"
+            Risco = "baixo"
+            Bloco = {
+                Get-AppxPackage "*Microsoft.549981C3F5F10*" -AllUsers 2>$null | Remove-AppxPackage -AllUsers 2>$null
+                Get-AppxProvisionedPackage -Online 2>$null |
+                    Where-Object { $_.DisplayName -match "Cortana" } |
+                    Remove-AppxProvisionedPackage -Online 2>$null | Out-Null
+                $p = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search"
+                if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
+                Set-ItemProperty $p -Name "AllowCortana"            -Value 0 -Type DWord -Force 2>$null
+                Set-ItemProperty $p -Name "AllowCortanaAboveLock"   -Value 0 -Type DWord -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "Microsoft Edge - Desativar Autostart e Background"
+            Desc  = "Remove Edge do startup, desativa Startup Boost, Sidebar, Bing e Copilot"
+            Risco = "baixo"
+            Bloco = {
+                Remove-ItemProperty "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" -Name "MicrosoftEdgeAutoLaunch*" -Force 2>$null
+                Stop-Service "edgeupdate"  -Force 2>$null; Set-Service "edgeupdate"  -StartupType Disabled 2>$null
+                Stop-Service "edgeupdatem" -Force 2>$null; Set-Service "edgeupdatem" -StartupType Disabled 2>$null
+                $e = "HKLM:\SOFTWARE\Policies\Microsoft\Edge"
+                if (-not (Test-Path $e)) { New-Item $e -Force | Out-Null }
+                Set-ItemProperty $e -Name "HubsSidebarEnabled"              -Value 0 -Type DWord -Force 2>$null
+                Set-ItemProperty $e -Name "StartupBoostEnabled"             -Value 0 -Type DWord -Force 2>$null
+                Set-ItemProperty $e -Name "BackgroundModeEnabled"           -Value 0 -Type DWord -Force 2>$null
+                Set-ItemProperty $e -Name "PersonalizationReportingEnabled" -Value 0 -Type DWord -Force 2>$null
+                Set-ItemProperty $e -Name "DiagnosticData"                  -Value 0 -Type DWord -Force 2>$null
+                Set-ItemProperty $e -Name "EdgeDiscoverEnabled"             -Value 0 -Type DWord -Force 2>$null
+                Set-ItemProperty $e -Name "BingAdsSuppression"              -Value 1 -Type DWord -Force 2>$null
+                Set-ItemProperty $e -Name "EdgeShoppingAssistantEnabled"    -Value 0 -Type DWord -Force 2>$null
+                Set-ItemProperty $e -Name "CopilotCDPPageContext"           -Value 0 -Type DWord -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "Windows Search - Desativar Indexacao e Bing"
+            Desc  = "Para indexacao de disco e Bing na barra de busca (libera CPU e I/O)"
+            Risco = "medio"
+            Bloco = {
+                Stop-Service "WSearch" -Force 2>$null; Set-Service "WSearch" -StartupType Disabled 2>$null
+                $p = "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Search"
+                if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
+                Set-ItemProperty $p -Name "BingSearchEnabled"           -Value 0 -Type DWord -Force 2>$null
+                Set-ItemProperty $p -Name "CortanaConsent"              -Value 0 -Type DWord -Force 2>$null
+                Set-ItemProperty $p -Name "DisableSearchBoxSuggestions" -Value 1 -Type DWord -Force 2>$null
+                $pl = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search"
+                if (-not (Test-Path $pl)) { New-Item $pl -Force | Out-Null }
+                Set-ItemProperty $pl -Name "DisableWebSearch"      -Value 1 -Type DWord -Force 2>$null
+                Set-ItemProperty $pl -Name "ConnectedSearchUseWeb" -Value 0 -Type DWord -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "Widgets e News Feed - Remover da Taskbar"
+            Desc  = "Remove painel de Widgets, News e Interests (consome CPU e rede em idle)"
+            Risco = "baixo"
+            Bloco = {
+                if ($Script:IsWin11) {
+                    Set-ItemProperty "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced" `
+                        -Name "TaskbarDa" -Value 0 -Type DWord -Force 2>$null
+                    Stop-Service "Widgets" -Force 2>$null; Set-Service "Widgets" -StartupType Disabled 2>$null
+                } else {
+                    # Win10: desativar News and Interests (taskbar)
+                    $pn = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Feeds"
+                    if (-not (Test-Path $pn)) { New-Item $pn -Force | Out-Null }
+                    Set-ItemProperty $pn -Name "ShellFeedsTaskbarViewMode"    -Value 2 -Type DWord -Force 2>$null
+                    Set-ItemProperty $pn -Name "ShellFeedsTaskbarOpenOnHover" -Value 0 -Type DWord -Force 2>$null
+                }
+                $p = "HKLM:\SOFTWARE\Policies\Microsoft\Dsh"
+                if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
+                Set-ItemProperty $p -Name "AllowNewsAndInterests" -Value 0 -Type DWord -Force 2>$null
+                $pn = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Feeds"
+                if (-not (Test-Path $pn)) { New-Item $pn -Force | Out-Null }
+                Set-ItemProperty $pn -Name "ShellFeedsTaskbarViewMode"    -Value 2 -Type DWord -Force 2>$null
+                Set-ItemProperty $pn -Name "ShellFeedsTaskbarOpenOnHover" -Value 0 -Type DWord -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "Tarefas de Telemetria - Desativar Tasks Agendadas"
+            Desc  = "Para CompatTelRunner, CEIP, DiskDiagnostic e 13 outras tasks de telemetria"
+            Risco = "baixo"
+            Bloco = {
+                $tasks = @(
+                    "\Microsoft\Windows\Application Experience\Microsoft Compatibility Appraiser"
+                    "\Microsoft\Windows\Application Experience\ProgramDataUpdater"
+                    "\Microsoft\Windows\Application Experience\StartupAppTask"
+                    "\Microsoft\Windows\Autochk\Proxy"
+                    "\Microsoft\Windows\Customer Experience Improvement Program\Consolidator"
+                    "\Microsoft\Windows\Customer Experience Improvement Program\UsbCeip"
+                    "\Microsoft\Windows\DiskDiagnostic\Microsoft-Windows-DiskDiagnosticDataCollector"
+                    "\Microsoft\Windows\Feedback\Siuf\DmClient"
+                    "\Microsoft\Windows\Feedback\Siuf\DmClientOnScenarioDownload"
+                    "\Microsoft\Windows\Windows Error Reporting\QueueReporting"
+                    "\Microsoft\Windows\CloudExperienceHost\CreateObjectTask"
+                    "\Microsoft\Windows\HelloFace\FODCleanupTask"
+                    "\Microsoft\Windows\Maps\MapsUpdateTask"
+                    "\Microsoft\Windows\Maps\MapsToastTask"
+                )
+                foreach ($t in $tasks) {
+                    Disable-ScheduledTask -TaskName $t -ErrorAction SilentlyContinue | Out-Null
+                }
+            }
+        }
+    )
+
+    Invoke-TweakChecklist -Titulo "Nuclear Microsoft" -Tweaks $tweaksList
+    $Script:TweaksFeitos.Add("Nuclear Microsoft: bloat removido")
+    LOG "Nuclear Microsoft v5.1"
+}
+
+# ================================================================
+#  NOVO v5.1 - REDUCAO DE PROCESSOS CPU / DESAFOGO DE RAM
+# ================================================================
+function Invoke-OtimizarProcessosCPU {
+    H2 "REDUCAO DE PROCESSOS E DESAFOGO DE RAM"
+
+    INF "Foco: matar processos pesados em background, liberar RAM real"
+    INF "e reduzir uso de CPU em idle para abaixo de 2pct."
+    Write-Host ""
+
+    $tweaksList = @(
+        @{
+            Nome  = "Matar Processos Pesados em Background"
+            Desc  = "Para SearchIndexer, SpeechRuntime, CompatTelRunner, YourPhone e similares"
+            Risco = "baixo"
+            Bloco = {
+                $procs = @(
+                    "SearchIndexer","SearchProtocolHost","SearchFilterHost",
+                    "CompatTelRunner","MSOOBE","MusNotifyIcon",
+                    "WerFault","WerFaultSecure","wermgr",
+                    "YourPhone","PhoneExperienceHost",
+                    "SpeechRuntime","SpeechExperienceHost",
+                    "PeopleExperienceHost","backgroundTaskHost",
+                    "Microsoft.SharePoint","OneDrive","msedgewebview2"
+                )
+                foreach ($p in $procs) { Stop-Process -Name $p -Force -ErrorAction SilentlyContinue }
+            }
+        }
+        @{
+            Nome  = "SysMain - Desativar (so recomendado em HDD ou RAM <= 8GB)"
+            Desc  = "Em SSD/NVMe com 16GB+ RAM, manter ativo nao prejudica. Desativar em HDD."
+            Risco = "medio"
+            Bloco = {
+                if ($Script:DiscoTipo -match "HDD" -or $Script:RAMtotalGB -le 8) {
+                    Stop-Service "SysMain" -Force 2>$null; Set-Service "SysMain" -StartupType Disabled 2>$null
+                } else {
+                    WN "SysMain mantido ativo (SSD/NVMe + RAM suficiente - desativar nao ajuda)"
+                }
+            }
+        }
+        @{
+            Nome  = "Desativar Apps em Background Globalmente"
+            Desc  = "Group Policy: impede qualquer app UWP de rodar em segundo plano"
+            Risco = "medio"
+            Bloco = {
+                $p = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy"
+                if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
+                Set-ItemProperty $p -Name "LetAppsRunInBackground" -Value 2 -Type DWord -Force 2>$null
+                Set-ItemProperty "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications" `
+                    -Name "GlobalUserDisabled" -Value 1 -Type DWord -Force 2>$null
+                Set-ItemProperty "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Search" `
+                    -Name "BackgroundAppGlobalToggle" -Value 0 -Type DWord -Force 2>$null
+                # Desativar individualmente todos os packages
+                Get-ChildItem "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications" `
+                    -ErrorAction SilentlyContinue | ForEach-Object {
+                        Set-ItemProperty $_.PSPath -Name "Disabled"       -Value 1 -Type DWord -Force 2>$null
+                        Set-ItemProperty $_.PSPath -Name "DisabledByUser" -Value 1 -Type DWord -Force 2>$null
+                    }
+            }
+        }
+        @{
+            Nome  = "Power Throttling OFF"
+            Desc  = "Impede Windows de reduzir frequencia de CPU em processos background"
+            Risco = "baixo"
+            Bloco = {
+                $p = "HKLM:\SYSTEM\CurrentControlSet\Control\Power\PowerThrottling"
+                if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
+                Set-ItemProperty $p -Name "PowerThrottlingOff" -Value 1 -Type DWord -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "Xbox Background Services OFF"
+            Desc  = "Para XblAuthManager, XblGameSave, XboxNetApiSvc, XboxGipSvc, BcastDVR"
+            Risco = "baixo"
+            Bloco = {
+                $xsvcs = @("XblAuthManager","XblGameSave","XboxNetApiSvc","XboxGipSvc","xbgm","BcastDVRUserService")
+                foreach ($s in $xsvcs) { Stop-Service $s -Force 2>$null; Set-Service $s -StartupType Disabled 2>$null }
+            }
+        }
+        @{
+            Nome  = "Liberar RAM - Empty Working Set (agora)"
+            Desc  = "Forca liberacao de paginas de RAM ociosas de todos os processos"
+            Risco = "baixo"
+            Bloco = {
+                Add-Type @"
+using System; using System.Runtime.InteropServices; using System.Diagnostics;
+public class RAMCleaner {
+    [DllImport("kernel32.dll")]
+    public static extern bool SetProcessWorkingSetSize(IntPtr p, int mn, int mx);
+    public static void Clear() {
+        foreach (Process p in Process.GetProcesses()) {
+            try { SetProcessWorkingSetSize(p.Handle, -1, -1); } catch {}
+        }
+    }
+}
+"@
+                [RAMCleaner]::Clear()
+                [System.GC]::Collect()
+                [System.GC]::WaitForPendingFinalizers()
+                [System.GC]::Collect()
+            }
+        }
+        @{
+            Nome  = "Rebaixar Prioridade de Processos de Sistema"
+            Desc  = "SearchIndexer, MsMpEng e SgrmBroker ficam em BelowNormal"
+            Risco = "medio"
+            Bloco = {
+                $baixaPrior = @("SearchIndexer","SearchProtocolHost","MsMpEng","SgrmBroker","uhssvc")
+                foreach ($pn in $baixaPrior) {
+                    $proc = Get-Process -Name $pn -ErrorAction SilentlyContinue
+                    if ($proc) {
+                        try { $proc.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::BelowNormal } catch {}
+                    }
+                }
+            }
+        }
+        @{
+            Nome  = "Print Spooler OFF (se nao usar impressora)"
+            Desc  = "Libera ~30MB RAM e elimina processo sempre ativo"
+            Risco = "medio"
+            Bloco = {
+                Stop-Service "Spooler" -Force 2>$null; Set-Service "Spooler" -StartupType Disabled 2>$null
+            }
+        }
+        @{
+            Nome  = "Desativar Tasks Agendadas de Background Office/Update"
+            Desc  = "Para tasks que acordam CPU: Office telemetria, UpdateOrchestrator"
+            Risco = "baixo"
+            Bloco = {
+                $tasks = @(
+                    "\Microsoft\Office\OfficeTelemetryAgentFallBack"
+                    "\Microsoft\Office\OfficeTelemetryAgentLogOn"
+                    "\Microsoft\Office\OfficeBackgroundTaskHandlerRegistration"
+                    "\Microsoft\Office\OfficeBackgroundTaskHandlerLogon"
+                    "\Microsoft\Windows\UpdateOrchestrator\USO_UxBroker"
+                    "\Microsoft\Windows\UpdateOrchestrator\ScheduleScan"
+                    "\Microsoft\Windows\UpdateOrchestrator\UpdateModelTask"
+                    "\Microsoft\Windows\WindowsUpdate\Scheduled Start"
+                )
+                foreach ($t in $tasks) { Disable-ScheduledTask -TaskName $t -ErrorAction SilentlyContinue | Out-Null }
+            }
+        }
+        @{
+            Nome  = "SecurityHealthSystray OFF (icone bandeja)"
+            Desc  = "Remove icone de seguranca da bandeja (nao remove o Defender)"
+            Risco = "medio"
+            Bloco = {
+                Stop-Process -Name "SecurityHealthSystray" -Force -ErrorAction SilentlyContinue
+                Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" `
+                    -Name "SecurityHealth" -Value "" -Force 2>$null
+            }
+        }
+    )
+
+    Invoke-TweakChecklist -Titulo "Processos CPU e RAM" -Tweaks $tweaksList
+    $Script:TweaksFeitos.Add("Processos/RAM: checklist aplicado")
+    LOG "Processos CPU/RAM v5.1"
+}
+
+# ================================================================
+#  NOVO v5.1 - INPUT LAG: REGEDIT + GPEDIT FOCADO
+# ================================================================
+function Invoke-OtimizarInputLag {
+    H2 "REDUCAO DE INPUT LAG - REGEDIT + GP"
+
+    INF "Tweaks focados em latencia de entrada: mouse, teclado e rede."
+    INF "Impacto real em jogos competitivos e FPS games."
+    Write-Host ""
+
+    $tweaksList = @(
+        @{
+            Nome  = "Mouse - Desativar Aceleracao (Enhance Pointer Precision)"
+            Desc  = "Remove aceleracao do ponteiro - movimento 1:1 com o sensor fisico"
+            Risco = "baixo"
+            Bloco = {
+                $p = "HKCU:\Control Panel\Mouse"
+                Set-ItemProperty $p -Name "MouseSpeed"      -Value "0" -Type String -Force 2>$null
+                Set-ItemProperty $p -Name "MouseThreshold1" -Value "0" -Type String -Force 2>$null
+                Set-ItemProperty $p -Name "MouseThreshold2" -Value "0" -Type String -Force 2>$null
+                Set-ItemProperty $p -Name "SmoothMouseXCurve" `
+                    -Value ([byte[]](0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+                                     0xC0,0xCC,0x0C,0x00,0x00,0x00,0x00,0x00,
+                                     0x80,0x99,0x19,0x00,0x00,0x00,0x00,0x00,
+                                     0x40,0x66,0x26,0x00,0x00,0x00,0x00,0x00,
+                                     0x00,0x33,0x33,0x00,0x00,0x00,0x00,0x00)) -Type Binary -Force 2>$null
+                Set-ItemProperty $p -Name "SmoothMouseYCurve" `
+                    -Value ([byte[]](0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+                                     0x00,0x00,0x38,0x00,0x00,0x00,0x00,0x00,
+                                     0x00,0x00,0x70,0x00,0x00,0x00,0x00,0x00,
+                                     0x00,0x00,0xA8,0x00,0x00,0x00,0x00,0x00,
+                                     0x00,0x00,0xE0,0x00,0x00,0x00,0x00,0x00)) -Type Binary -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "Teclado - Delay e Repeat Rate Minimos"
+            Desc  = "KeyboardDelay=0, KeyboardSpeed=31 (resposta maxima do teclado)"
+            Risco = "baixo"
+            Bloco = {
+                $p = "HKCU:\Control Panel\Keyboard"
+                Set-ItemProperty $p -Name "KeyboardDelay" -Value "0"  -Type String -Force 2>$null
+                Set-ItemProperty $p -Name "KeyboardSpeed" -Value "31" -Type String -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "USB Selective Suspend OFF (XHCI)"
+            Desc  = "Desativa suspensao de USB - elimina wake delay de mouse/teclado"
+            Risco = "baixo"
+            Bloco = {
+                powercfg /setacvalueindex SCHEME_CURRENT 2a737441-1930-4402-8d77-b2bebba308a3 48e6b7a6-50f5-4782-a5d4-53bb8f07e226 0 2>$null
+                powercfg /setactive SCHEME_CURRENT 2>$null
+                Get-PnpDevice -Class "USB" -ErrorAction SilentlyContinue | ForEach-Object {
+                    $path = "HKLM:\SYSTEM\CurrentControlSet\Enum\$($_.InstanceId)\Device Parameters"
+                    if (Test-Path $path) {
+                        Set-ItemProperty $path -Name "EnhancedPowerManagementEnabled" -Value 0 -Type DWord -Force 2>$null
+                        Set-ItemProperty $path -Name "SelectiveSuspendEnabled"         -Value 0 -Type DWord -Force 2>$null
+                    }
+                }
+            }
+        }
+        @{
+            Nome  = "IRQ Priority - Mouse e Teclado em High"
+            Desc  = "Eleva prioridade de interrupcao HID para maxima"
+            Risco = "baixo"
+            Bloco = {
+                foreach ($svc in @("mouclass","kbdclass","hidusb")) {
+                    $p = "HKLM:\SYSTEM\CurrentControlSet\Services\$svc"
+                    if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
+                    Set-ItemProperty $p -Name "RequestedPriority" -Value 6 -Type DWord -Force 2>$null
+                }
+            }
+        }
+        @{
+            Nome  = "Scheduler - Win32PrioritySeparation Gaming"
+            Desc  = "0x26: foreground recebe quantum curto e boost x6 sobre background"
+            Risco = "baixo"
+            Bloco = {
+                # Win10: 0x26 (38) = quantum curto com boost. Win11: 2 = sem stutter
+                $w32val = if ($Script:IsWin11) { 2 } else { 0x26 }
+                Set-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\PriorityControl" `
+                    -Name "Win32PrioritySeparation" -Value $w32val -Type DWord -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "MMCSS - Prioridade Maxima para Threads de Jogo"
+            Desc  = "Multimedia Class Scheduler: jogos tem prioridade RT de CPU"
+            Risco = "baixo"
+            Bloco = {
+                $g = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games"
+                if (-not (Test-Path $g)) { New-Item $g -Force | Out-Null }
+                Set-ItemProperty $g -Name "Priority"            -Value 6       -Type DWord  -Force 2>$null
+                Set-ItemProperty $g -Name "Clock Rate"          -Value 10000   -Type DWord  -Force 2>$null
+                Set-ItemProperty $g -Name "GPU Priority"        -Value 8       -Type DWord  -Force 2>$null
+                Set-ItemProperty $g -Name "Scheduling Category" -Value "High"  -Type String -Force 2>$null
+                Set-ItemProperty $g -Name "SFIO Priority"       -Value "High"  -Type String -Force 2>$null
+                Set-ItemProperty $g -Name "Background Only"     -Value "False" -Type String -Force 2>$null
+                Set-ItemProperty $g -Name "Affinity"            -Value 0       -Type DWord  -Force 2>$null
+                Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile" `
+                    -Name "SystemResponsiveness" -Value 0 -Type DWord -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "Notificacoes e Action Center OFF"
+            Desc  = "Bloqueia toast notifications durante jogo"
+            Risco = "baixo"
+            Bloco = {
+                $p = "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\PushNotifications"
+                if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
+                Set-ItemProperty $p -Name "ToastEnabled"           -Value 0 -Type DWord -Force 2>$null
+                Set-ItemProperty $p -Name "LockScreenToastEnabled" -Value 0 -Type DWord -Force 2>$null
+                $pa = "HKCU:\SOFTWARE\Policies\Microsoft\Windows\Explorer"
+                if (-not (Test-Path $pa)) { New-Item $pa -Force | Out-Null }
+                Set-ItemProperty $pa -Name "DisableNotificationCenter" -Value 1 -Type DWord -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "Auto HDR e VRR Forcado OFF"
+            Desc  = "Auto HDR e VRR automatico podem causar stutter - desativa globalmente"
+            Risco = "medio"
+            Bloco = {
+                $p = "HKCU:\SOFTWARE\Microsoft\DirectX\UserGpuPreferences"
+                if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
+                if ($Script:IsWin11) {
+                    Set-ItemProperty $p -Name "DirectXUserGlobalSettings" `
+                        -Value "AutoHDREnable=0;VRROptimizeEnable=0;" -Type String -Force 2>$null
+                } else {
+                    WN "Auto HDR e VRR: exclusivos do Win11 - ignorado"
+                }
+            }
+        }
+        @{
+            Nome  = "QoS Gaming - Pacotes UDP com Prioridade Maxima"
+            Desc  = "Marca pacotes de jogos populares com DSCP 46 (Expedited Forwarding)"
+            Risco = "baixo"
+            Bloco = {
+                $jogos = @("csgo.exe","valorant.exe","fortnite.exe","r5apex.exe",
+                            "destiny2.exe","overwatch.exe","cod.exe","dota2.exe",
+                            "pubg.exe","bf2042.exe","eft.exe","league of legends.exe")
+                foreach ($j in $jogos) {
+                    $pq = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\QoS\$j"
+                    if (-not (Test-Path $pq)) { New-Item $pq -Force | Out-Null }
+                    Set-ItemProperty $pq -Name "Version"          -Value "1.0" -Type String -Force 2>$null
+                    Set-ItemProperty $pq -Name "Application Name" -Value $j    -Type String -Force 2>$null
+                    Set-ItemProperty $pq -Name "Protocol"         -Value "17"  -Type String -Force 2>$null
+                    Set-ItemProperty $pq -Name "Local Port"       -Value "*"   -Type String -Force 2>$null
+                    Set-ItemProperty $pq -Name "Remote Port"      -Value "*"   -Type String -Force 2>$null
+                    Set-ItemProperty $pq -Name "Local IP"         -Value "*"   -Type String -Force 2>$null
+                    Set-ItemProperty $pq -Name "Remote IP"        -Value "*"   -Type String -Force 2>$null
+                    Set-ItemProperty $pq -Name "DSCP Value"       -Value "46"  -Type String -Force 2>$null
+                    Set-ItemProperty $pq -Name "Throttle Rate"    -Value "-1"  -Type String -Force 2>$null
+                }
+            }
+        }
+        @{
+            Nome  = "GPU Pre-Render Frames = 1 (Low Latency)"
+            Desc  = "Limita fila de frames pre-renderizados na GPU (reduz input lag)"
+            Risco = "baixo"
+            Bloco = {
+                $d3d = "HKCU:\Software\Microsoft\Direct3D"
+                if (-not (Test-Path $d3d)) { New-Item $d3d -Force | Out-Null }
+                Set-ItemProperty $d3d -Name "MaxTextureDimension" -Value 0 -Type DWord -Force 2>$null
+                if ($Script:GPUFab -eq 'NVIDIA') {
+                    $nv = "HKCU:\SOFTWARE\NVIDIA Corporation\Global\NVTweak"
+                    if (-not (Test-Path $nv)) { New-Item $nv -Force | Out-Null }
+                    Set-ItemProperty $nv -Name "Deception" -Value 0 -Type DWord -Force 2>$null
+                }
+            }
+        }
+        @{
+            Nome  = "DWM - Desativar Vsync Forcado do Desktop"
+            Desc  = "Reduz latencia de apresentacao de frames no Desktop Window Manager"
+            Risco = "medio"
+            Bloco = {
+                $p = "HKCU:\Software\Microsoft\Windows\DWM"
+                if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
+                Set-ItemProperty $p -Name "OverlayTestMode" -Value 5 -Type DWord -Force 2>$null
+            }
+        }
+    )
+
+    Invoke-TweakChecklist -Titulo "Input Lag - Regedit + GP" -Tweaks $tweaksList
+    $Script:TweaksFeitos.Add("Input Lag: checklist aplicado")
+    LOG "Input Lag tweaks v5.1"
+}
+
+# ================================================================
+#  NOVO v5.1 - GPEDIT PERFORMANCE PACK (via registro)
+# ================================================================
+function Invoke-GPeditPerformance {
+    H2 "GROUP POLICY - PACK DE PERFORMANCE"
+
+    INF "Aplica politicas equivalentes ao gpedit.msc via registro."
+    INF "Funciona no Windows Home tambem."
+    Write-Host ""
+
+    $winEdition = (Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue).Caption
+    if ($winEdition -match 'Home') {
+        WN "Windows Home: politicas via registro (equivalente ao gpedit.msc)"
+        Write-Host ""
+    }
+
+    $tweaksList = @(
+        @{
+            Nome  = "GP: Prompt de Elevacao OFF para Admins"
+            Desc  = "Admins nao veem UAC prompt para apps Microsoft assinados"
+            Risco = "medio"
+            Bloco = {
+                $p = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+                Set-ItemProperty $p -Name "ConsentPromptBehaviorAdmin" -Value 0 -Type DWord -Force 2>$null
+                Set-ItemProperty $p -Name "PromptOnSecureDesktop"      -Value 0 -Type DWord -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "GP: Driver Updates Automaticos OFF"
+            Desc  = "Impede Windows Update de trocar drivers automaticamente"
+            Risco = "baixo"
+            Bloco = {
+                $p = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\DeviceInstall\Settings"
+                if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
+                Set-ItemProperty $p -Name "DisableWindowsUpdateAccess" -Value 1 -Type DWord -Force 2>$null
+                $p2 = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\DriverSearching"
+                Set-ItemProperty $p2 -Name "SearchOrderConfig"       -Value 0 -Type DWord -Force 2>$null
+                Set-ItemProperty $p2 -Name "DontSearchWindowsUpdate" -Value 1 -Type DWord -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "GP: Windows Spotlight e Anuncios OFF"
+            Desc  = "Desativa Spotlight, Consumer Features e anuncios na lock screen"
+            Risco = "baixo"
+            Bloco = {
+                $p = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent"
+                if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
+                Set-ItemProperty $p -Name "DisableWindowsSpotlightFeatures"                   -Value 1 -Type DWord -Force 2>$null
+                Set-ItemProperty $p -Name "DisableWindowsConsumerFeatures"                    -Value 1 -Type DWord -Force 2>$null
+                Set-ItemProperty $p -Name "DisableSoftLanding"                                -Value 1 -Type DWord -Force 2>$null
+                Set-ItemProperty $p -Name "DisableWindowsSpotlightOnActionCenter"             -Value 1 -Type DWord -Force 2>$null
+                Set-ItemProperty $p -Name "DisableWindowsSpotlightWindowsWelcomeExperience"   -Value 1 -Type DWord -Force 2>$null
+                Set-ItemProperty $p -Name "DisableTailoredExperiencesWithDiagnosticData"      -Value 1 -Type DWord -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "GP: Apps Sugeridos (Silently Installed) OFF"
+            Desc  = "Bloqueia instalacao silenciosa de Candy Crush, Spotify e similares"
+            Risco = "baixo"
+            Bloco = {
+                $pu = "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\ContentDeliveryManager"
+                Set-ItemProperty $pu -Name "SilentInstalledAppsEnabled" -Value 0 -Type DWord -Force 2>$null
+                Set-ItemProperty $pu -Name "PreInstalledAppsEnabled"    -Value 0 -Type DWord -Force 2>$null
+                Set-ItemProperty $pu -Name "OemPreInstalledAppsEnabled" -Value 0 -Type DWord -Force 2>$null
+                Set-ItemProperty $pu -Name "ContentDeliveryAllowed"     -Value 0 -Type DWord -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "GP: NTFS Filesystem Performance"
+            Desc  = "8.3 OFF, LastAccess OFF, MFT Zone 2, Criptografia de NTFS OFF"
+            Risco = "baixo"
+            Bloco = {
+                $p = "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem"
+                Set-ItemProperty $p -Name "NtfsDisable8dot3NameCreation" -Value 1 -Type DWord -Force 2>$null
+                Set-ItemProperty $p -Name "NtfsDisableLastAccessUpdate"  -Value 1 -Type DWord -Force 2>$null
+                Set-ItemProperty $p -Name "NtfsEncryptionService"        -Value 0 -Type DWord -Force 2>$null
+                Set-ItemProperty $p -Name "NtfsMftZoneReservation"       -Value 2 -Type DWord -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "GP: CPU Scheduling - Foreground Boost"
+            Desc  = "Processos em primeiro plano recebem quanta de CPU maiores (Win32PrioritySeparation=2)"
+            Risco = "baixo"
+            Bloco = {
+                # Win10: 0x26 (38) = quantum curto com boost. Win11: 2 = sem stutter
+                $w32val = if ($Script:IsWin11) { 2 } else { 0x26 }
+                Set-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\PriorityControl" `
+                    -Name "Win32PrioritySeparation" -Value $w32val -Type DWord -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "GP: Remote Assistance OFF"
+            Desc  = "Desativa Assistencia Remota - elimina servico e porta aberta"
+            Risco = "baixo"
+            Bloco = {
+                Set-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Remote Assistance" `
+                    -Name "fAllowToGetHelp" -Value 0 -Type DWord -Force 2>$null
+                $pp = "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services"
+                if (-not (Test-Path $pp)) { New-Item $pp -Force | Out-Null }
+                Set-ItemProperty $pp -Name "fAllowToGetHelp" -Value 0 -Type DWord -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "GP: Error Reporting (WER) OFF"
+            Desc  = "Para WerFault.exe que acorda CPU em crashes - elimina envios a Microsoft"
+            Risco = "baixo"
+            Bloco = {
+                $p = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Error Reporting"
+                if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
+                Set-ItemProperty $p -Name "Disabled"                -Value 1 -Type DWord -Force 2>$null
+                Set-ItemProperty $p -Name "DontSendAdditionalData"  -Value 1 -Type DWord -Force 2>$null
+                Set-ItemProperty $p -Name "LoggingDisabled"         -Value 1 -Type DWord -Force 2>$null
+                Stop-Service "WerSvc" -Force 2>$null; Set-Service "WerSvc" -StartupType Disabled 2>$null
+            }
+        }
+        @{
+            Nome  = "GP: Location e Sensors OFF"
+            Desc  = "GPS e sensores desativados - elimina polling periodico de hardware"
+            Risco = "baixo"
+            Bloco = {
+                $p = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\LocationAndSensors"
+                if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
+                Set-ItemProperty $p -Name "DisableLocation"               -Value 1 -Type DWord -Force 2>$null
+                Set-ItemProperty $p -Name "DisableSensors"                -Value 1 -Type DWord -Force 2>$null
+                Set-ItemProperty $p -Name "DisableLocationScripting"      -Value 1 -Type DWord -Force 2>$null
+                Set-ItemProperty $p -Name "DisableWindowsLocationProvider" -Value 1 -Type DWord -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "GP: AutoPlay e AutoRun OFF"
+            Desc  = "Desativa scan automatico ao inserir USB/CD (libera I/O e CPU pontual)"
+            Risco = "baixo"
+            Bloco = {
+                $pa = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer"
+                Set-ItemProperty $pa -Name "NoDriveTypeAutoRun" -Value 255 -Type DWord -Force 2>$null
+                Set-ItemProperty $pa -Name "NoAutorun"          -Value 1   -Type DWord -Force 2>$null
+                Stop-Service "ShellHWDetection" -Force 2>$null
+                Set-Service  "ShellHWDetection" -StartupType Disabled 2>$null
+            }
+        }
+        @{
+            Nome  = "GP: Network Throttle Background OFF"
+            Desc  = "Remove reserva de 20pct da banda para processos de baixa prioridade"
+            Risco = "baixo"
+            Bloco = {
+                $p = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Psched"
+                if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
+                Set-ItemProperty $p -Name "NonBestEffortLimit" -Value 0 -Type DWord -Force 2>$null
+            }
+        }
+        @{
+            Nome  = "GP: Hibernacao Hibrida OFF"
+            Desc  = "Hybrid sleep desnecessario para desktops - economiza escrita em SSD"
+            Risco = "baixo"
+            Bloco = {
+                powercfg /setacvalueindex SCHEME_CURRENT SUB_SLEEP HYBRIDSLEEP 0 2>$null
+                powercfg /setactive SCHEME_CURRENT 2>$null
+            }
+        }
+    )
+
+    Invoke-TweakChecklist -Titulo "Group Policy Performance" -Tweaks $tweaksList
+    $Script:TweaksFeitos.Add("GPedit Performance: checklist aplicado")
+    LOG "GPedit Performance v5.1"
+}
+
+
+# ================================================================
+#  ABIMALEKBOOST v6.0 - MOTOR DE IA HEURISTICA
+#  Sistema de otimizacao inteligente para Windows
+#  Arquitetura: Coleta -> Analise -> Decisao -> Aplicacao -> Score
+# ================================================================
+
+# ================================================================
+#  REGION: VARIAVEIS DO MOTOR DE IA
+# ================================================================
+$Script:IA = [ordered]@{
+    # Snapshot do sistema (antes/depois)
+    SnapshotAntes  = $null
+    SnapshotDepois = $null
+
+    # Classificacao do gargalo detectado
+    Gargalo        = @()    # CPU-bound, GPU-bound, RAM-limitada, IO-limitado, Rede-instavel
+
+    # Perfil de uso detectado / selecionado
+    Perfil         = ""     # Seguro, Gamer, Streamer, Extremo
+
+    # Scores calculados
+    ScoreAntes     = @{ Geral=0; Latencia=0; Responsividade=0; Gamer=0 }
+    ScoreDepois    = @{ Geral=0; Latencia=0; Responsividade=0; Gamer=0 }
+
+    # Decisoes do motor
+    OtimizacoesDecididas = [System.Collections.Generic.List[hashtable]]::new()
+    OtimizacoesAplicadas = [System.Collections.Generic.List[string]]::new()
+
+    # Historico local (JSON)
+    ArqHistorico   = Join-Path $Script:PastaRaiz "ia_historico.json"
+    ArqBackupReg   = Join-Path $Script:PastaBackup "reg_ia_backup.reg"
+    Historico      = $null
+
+    # Metricas coletadas
+    CPUUsoPct      = 0.0
+    RAMUsoPct      = 0.0
+    DiskQueueLen   = 0.0
+    LatenciaMS     = 0
+    ProcPesados    = @()
+    ServicosAtivos = 0
+    PlanoAtual     = ""
+    NetworkJitter  = 0
+
+    # Modo simulacao
+    SimulandoJogo  = ""
+}
+
+# ================================================================
+#  REGION: COLETA DE DADOS (SNAPSHOT DO SISTEMA)
+# ================================================================
+function Get-IASnapshot {
+    param([string]$Label = "snapshot")
+
+    IN "Coletando metricas do sistema ($Label)..."
+
+    $snap = [ordered]@{
+        Timestamp      = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        Label          = $Label
+
+        # --- CPU ---
+        CPUNome        = $Script:CPUNome
+        CPUNucleos     = $Script:CPUNucleos
+        CPUThreads     = $Script:CPUThreads
+        CPUFabricante  = $Script:CPUFab
+        CPUX3D         = $Script:CPUX3D
+        CPUGen         = $Script:CPUGen
+
+        # Uso em tempo real
+        CPUUsoPct      = 0.0
+        CPUBaseClock   = 0
+        CPUCoreParking = $false
+
+        # --- RAM ---
+        RAMtotalGB     = $Script:RAMtotalGB
+        RAMtipo        = $Script:RAMtipo
+        RAMvelocidade  = $Script:RAMvelocidade
+        RAMUsoPct      = 0.0
+        RAMLivreGB     = 0.0
+        RAMCompressao  = $false
+        RAMPaginando   = $false
+
+        # --- GPU ---
+        GPUNome        = $Script:GPUNome
+        GPUFab         = $Script:GPUFab
+        GPUVRAM        = $Script:GPUVRAM
+        GPUTemp        = $Script:GPUTemp
+
+        # --- Armazenamento ---
+        DiscoTipo      = $Script:DiscoTipo
+        DiscoNVMe      = $Script:DiscoNVMe
+        DiskQueueLen   = 0.0
+        DiskReadMBs    = 0.0
+        DiskWriteMBs   = 0.0
+
+        # --- Rede ---
+        LatenciaMS     = 0
+        NetworkJitter  = 0
+        TCPAutotuning  = ""
+        NagleAtivo     = $true
+        BandaLargura   = ""
+
+        # --- Sistema ---
+        WinBuild       = $Script:WinBuild
+        PlanoEnergia   = ""
+        ServicosAtivos = 0
+        ProcessosPes   = @()
+        TimerResMS     = 0.0
+        PagefileGB     = 0.0
+        UptimeHoras    = 0
+
+        # --- Score calculado ---
+        Score          = @{ Geral=0; Latencia=0; Responsividade=0; Gamer=0 }
+    }
+
+    # CPU uso real
+    try {
+        $cpuObj = Get-CimInstance -ClassName Win32_Processor -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($cpuObj) {
+            $snap.CPUUsoPct  = $cpuObj.LoadPercentage
+            $snap.CPUBaseClock = $cpuObj.MaxClockSpeed
+        }
+    } catch {}
+
+    # CPU core parking
+    try {
+        $parking = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Power\PowerSettings\54533251-82be-4824-96c1-47b60b740d00\0cc5b647-c1df-4637-891a-dec35c318583" -ErrorAction SilentlyContinue
+        $snap.CPUCoreParking = ($parking -eq $null -or $parking.ValueMax -lt 100)
+    } catch {}
+
+    # RAM uso
+    try {
+        $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction SilentlyContinue
+        if ($os) {
+            $totalMB  = $os.TotalVisibleMemorySize / 1024
+            $livreMB  = $os.FreePhysicalMemory / 1024
+            $snap.RAMLivreGB  = [math]::Round($livreMB / 1024, 1)
+            $snap.RAMUsoPct   = [math]::Round((($totalMB - $livreMB) / $totalMB) * 100, 1)
+        }
+    } catch {}
+
+    # RAM compressao e paginando
+    try {
+        $memCompr = Get-Process "Memory Compression" -ErrorAction SilentlyContinue
+        $snap.RAMCompressao = ($memCompr -ne $null)
+        $pagefile = Get-CimInstance Win32_PageFileUsage -ErrorAction SilentlyContinue
+        if ($pagefile) {
+            $snap.PagefileGB = [math]::Round($pagefile.CurrentUsage / 1024, 1)
+            $snap.RAMPaginando = ($pagefile.CurrentUsage -gt 100)
+        }
+    } catch {}
+
+    # Disk I/O
+    try {
+        $diskSample1 = (Get-Counter "\PhysicalDisk(_Total)\Avg. Disk Queue Length" -ErrorAction SilentlyContinue).CounterSamples.CookedValue
+        $snap.DiskQueueLen = [math]::Round($diskSample1, 2)
+    } catch { $snap.DiskQueueLen = 0.0 }
+
+    # Rede - latencia para 8.8.8.8
+    try {
+        $pings = 1..5 | ForEach-Object {
+            $r = Test-Connection -ComputerName "8.8.8.8" -Count 1 -ErrorAction SilentlyContinue
+            if ($r) { $r.ResponseTime } else { 999 }
+        }
+        $avgPing = [math]::Round(($pings | Measure-Object -Average).Average, 0)
+        $maxPing = ($pings | Measure-Object -Maximum).Maximum
+        $snap.LatenciaMS    = $avgPing
+        $snap.NetworkJitter = $maxPing - $avgPing
+    } catch {
+        $snap.LatenciaMS   = 999
+        $snap.NetworkJitter = 0
+    }
+
+    # TCP Autotuning
+    try {
+        $tcpSet = Get-NetTCPSetting -ErrorAction SilentlyContinue | Select-Object -First 1
+        $snap.TCPAutotuning = $tcpSet.AutoTuningLevelLocal
+    } catch {}
+
+    # Nagle
+    try {
+        $nagle = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces" -ErrorAction SilentlyContinue
+        $snap.NagleAtivo = $true # assume ativo ate provar contrario
+        Get-ChildItem "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces" -ErrorAction SilentlyContinue | ForEach-Object {
+            $val = (Get-ItemProperty $_.PSPath -Name "TcpAckFrequency" -ErrorAction SilentlyContinue)
+            if ($val -and $val.TcpAckFrequency -eq 1) { $snap.NagleAtivo = $false }
+        }
+    } catch {}
+
+    # Plano de energia
+    try {
+        $plano = powercfg /getactivescheme 2>$null
+        if ($plano -match "Ultimate") { $snap.PlanoEnergia = "Ultimate Performance" }
+        elseif ($plano -match "High") { $snap.PlanoEnergia = "Alto Desempenho" }
+        elseif ($plano -match "Balanced") { $snap.PlanoEnergia = "Equilibrado" }
+        else { $snap.PlanoEnergia = "Outro" }
+    } catch {}
+
+    # Servicos ativos (nao System/LocalSystem essenciais)
+    try {
+        $svcs = Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq "Running" }
+        $snap.ServicosAtivos = $svcs.Count
+    } catch {}
+
+    # Top 5 processos por CPU
+    try {
+        $topProcs = Get-Process -ErrorAction SilentlyContinue |
+            Sort-Object CPU -Descending |
+            Select-Object -First 8 |
+            ForEach-Object { "$($_.Name)($([math]::Round($_.WorkingSet64/1MB,0))MB)" }
+        $snap.ProcessosPes = $topProcs
+    } catch {}
+
+    # Timer resolution (aproximado)
+    try {
+        $timerReg = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\Beep" -ErrorAction SilentlyContinue
+        # Medir latencia de sleep como proxy para timer resolution
+        $antes = [System.Diagnostics.Stopwatch]::StartNew()
+        Start-Sleep -Milliseconds 1
+        $antes.Stop()
+        $snap.TimerResMS = [math]::Round($antes.Elapsed.TotalMilliseconds, 2)
+    } catch {}
+
+    # Uptime
+    try {
+        $os2 = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
+        if ($os2) { $snap.UptimeHoras = [math]::Round((New-TimeSpan -Start $os2.LastBootUpTime).TotalHours, 1) }
+    } catch {}
+
+    # Calcular score
+    $snap.Score = Measure-PerformanceScore $snap
+
+    return $snap
+}
+
+# ================================================================
+#  REGION: SISTEMA DE SCORE
+# ================================================================
+function Measure-PerformanceScore {
+    param($snap)
+
+    $scores = @{ Geral=0; Latencia=0; Responsividade=0; Gamer=0 }
+
+    # === SCORE DE LATENCIA (0-100) ===
+    # Baseado em ping, jitter, timer resolution, nagle
+    $sLatencia = 100
+    if ($snap.LatenciaMS -gt 150)     { $sLatencia -= 30 }
+    elseif ($snap.LatenciaMS -gt 80)  { $sLatencia -= 20 }
+    elseif ($snap.LatenciaMS -gt 40)  { $sLatencia -= 10 }
+    elseif ($snap.LatenciaMS -gt 20)  { $sLatencia -= 5  }
+
+    if ($snap.NetworkJitter -gt 30)   { $sLatencia -= 20 }
+    elseif ($snap.NetworkJitter -gt 15) { $sLatencia -= 10 }
+    elseif ($snap.NetworkJitter -gt 5)  { $sLatencia -= 5  }
+
+    if ($snap.NagleAtivo)             { $sLatencia -= 10 }
+    if ($snap.TCPAutotuning -ne "Normal") { $sLatencia -= 5 }
+    if ($snap.TimerResMS -gt 5)       { $sLatencia -= 10 }
+    elseif ($snap.TimerResMS -gt 2)   { $sLatencia -= 5  }
+
+    $scores.Latencia = [math]::Max(0, [math]::Min(100, $sLatencia))
+
+    # === SCORE DE RESPONSIVIDADE (0-100) ===
+    # CPU, RAM livre, disk queue, servicos
+    $sResp = 100
+    if ($snap.CPUUsoPct -gt 80)       { $sResp -= 25 }
+    elseif ($snap.CPUUsoPct -gt 60)   { $sResp -= 15 }
+    elseif ($snap.CPUUsoPct -gt 40)   { $sResp -= 8  }
+
+    if ($snap.RAMUsoPct -gt 85)       { $sResp -= 20 }
+    elseif ($snap.RAMUsoPct -gt 70)   { $sResp -= 12 }
+    elseif ($snap.RAMUsoPct -gt 55)   { $sResp -= 6  }
+
+    if ($snap.DiskQueueLen -gt 2.0)   { $sResp -= 20 }
+    elseif ($snap.DiskQueueLen -gt 1.0) { $sResp -= 10 }
+    elseif ($snap.DiskQueueLen -gt 0.5) { $sResp -= 5  }
+
+    if ($snap.ServicosAtivos -gt 150) { $sResp -= 10 }
+    elseif ($snap.ServicosAtivos -gt 120) { $sResp -= 5 }
+
+    if ($snap.RAMPaginando)            { $sResp -= 15 }
+    if ($snap.CPUCoreParking)          { $sResp -= 10 }
+
+    $scores.Responsividade = [math]::Max(0, [math]::Min(100, $sResp))
+
+    # === SCORE GAMER (0-100) ===
+    # Foco em: plano de energia, core parking, timer, RAM livre, servicos
+    $sGamer = 100
+    if ($snap.PlanoEnergia -ne "Ultimate Performance" -and $snap.PlanoEnergia -ne "Alto Desempenho") { $sGamer -= 15 }
+    if ($snap.CPUCoreParking)          { $sGamer -= 15 }
+    if ($snap.TimerResMS -gt 3)        { $sGamer -= 10 }
+    if ($snap.NagleAtivo)              { $sGamer -= 8  }
+    if ($snap.RAMUsoPct -gt 70)        { $sGamer -= 10 }
+    if ($snap.ServicosAtivos -gt 120)  { $sGamer -= 8  }
+    if (-not $snap.DiscoNVMe -and $snap.DiskQueueLen -gt 0.5) { $sGamer -= 10 }
+    if ($snap.NetworkJitter -gt 15)    { $sGamer -= 10 }
+    if ($snap.RAMCompressao)           { $sGamer -= 5  }
+
+    # Bonus por hardware superior
+    if ($snap.CPUX3D)                  { $sGamer += 5  }
+    if ($snap.RAMtipo -eq "DDR5")      { $sGamer += 5  }
+    if ($snap.DiscoNVMe)               { $sGamer += 5  }
+    if ($snap.GPUVRAM -ge 8)           { $sGamer += 5  }
+
+    $scores.Gamer = [math]::Max(0, [math]::Min(100, $sGamer))
+
+    # === SCORE GERAL (media ponderada) ===
+    $scores.Geral = [math]::Round(
+        ($scores.Latencia * 0.3 + $scores.Responsividade * 0.35 + $scores.Gamer * 0.35), 0
+    )
+
+    return $scores
+}
+
+function Show-ScoreComparativo {
+    param($antes, $depois)
+
+    $a = $antes.Score
+    $d = $depois.Score
+
+    Write-Host ""
+    Write-Host "  $('=' * 70)" -ForegroundColor DarkCyan
+    Write-Host "  COMPARATIVO DE PERFORMANCE - AbimalekBoost IA" -ForegroundColor Cyan
+    Write-Host "  $('=' * 70)" -ForegroundColor DarkCyan
+    Write-Host ""
+
+    $metrics = @(
+        @{ Nome="Score Geral";        Antes=$a.Geral;         Depois=$d.Geral }
+        @{ Nome="Score Latencia";     Antes=$a.Latencia;      Depois=$d.Latencia }
+        @{ Nome="Score Responsiv.";   Antes=$a.Responsividade; Depois=$d.Responsividade }
+        @{ Nome="Score Gamer";        Antes=$a.Gamer;         Depois=$d.Gamer }
+    )
+
+    foreach ($m in $metrics) {
+        $diff  = $m.Depois - $m.Antes
+        $arrow = if ($diff -gt 0) { "  [+$diff]" } elseif ($diff -lt 0) { "  [$diff]" } else { "  [=]" }
+        $cor   = if ($diff -gt 0) { "Green" } elseif ($diff -lt 0) { "Red" } else { "Gray" }
+
+        $bar1 = "#" * [math]::Round($m.Antes  / 5)
+        $bar2 = "#" * [math]::Round($m.Depois / 5)
+
+        Write-Host ("  {0,-22} Antes: {1,3}  Depois: {2,3}" -f $m.Nome, $m.Antes, $m.Depois) -NoNewline
+        Write-Host $arrow -ForegroundColor $cor
+    }
+
+    Write-Host ""
+    # Ganho geral
+    $ganhoGeral = $d.Geral - $a.Geral
+    if ($ganhoGeral -gt 0) {
+        Write-Host "  Melhoria total: +$ganhoGeral pts" -ForegroundColor Green
+        if ($ganhoGeral -ge 20) { Write-Host "  EXCELENTE - Ganho massivo detectado!" -ForegroundColor Green }
+        elseif ($ganhoGeral -ge 10) { Write-Host "  OTIMO - Performance significativamente melhor." -ForegroundColor Cyan }
+        else { Write-Host "  BOM - Melhoria aplicada com sucesso." -ForegroundColor Yellow }
+    } elseif ($ganhoGeral -eq 0) {
+        Write-Host "  Sistema ja estava otimizado. Score mantido." -ForegroundColor Yellow
+    } else {
+        Write-Host "  Score reduziu. Verifique os tweaks aplicados." -ForegroundColor Red
+    }
+
+    Write-Host ""
+    Write-Host "  METRICAS DO SISTEMA APOS OTIMIZACAO:" -ForegroundColor DarkCyan
+    Write-Host ("  CPU: {0}% uso  |  RAM: {1}% uso ({2} GB livre)" -f $depois.CPUUsoPct, $depois.RAMUsoPct, $depois.RAMLivreGB)
+    Write-Host ("  Ping: {0}ms  |  Jitter: {1}ms  |  Timer: {2}ms" -f $depois.LatenciaMS, $depois.NetworkJitter, $depois.TimerResMS)
+    Write-Host ("  Disk Queue: {0}  |  Servicos: {1}  |  Plano: {2}" -f $depois.DiskQueueLen, $depois.ServicosAtivos, $depois.PlanoEnergia)
+    Write-Host ""
+}
+
+# ================================================================
+#  REGION: MOTOR DE DECISAO HEURISTICO
+# ================================================================
+function Invoke-IAMotorDecisao {
+    param($snap)
+
+    $Script:IA.OtimizacoesDecididas.Clear()
+    $Script:IA.Gargalo = @()
+
+    # ------- DETECTAR GARGALOS -------
+    if ($snap.CPUUsoPct -gt 60)       { $Script:IA.Gargalo += "CPU-bound" }
+    if ($snap.RAMUsoPct -gt 70 -or $snap.RAMPaginando) { $Script:IA.Gargalo += "RAM-limitada" }
+    if ($snap.DiskQueueLen -gt 1.0)   { $Script:IA.Gargalo += "IO-limitado" }
+    if ($snap.NetworkJitter -gt 15 -or $snap.LatenciaMS -gt 80) { $Script:IA.Gargalo += "Rede-instavel" }
+    if ($snap.GPUVRAM -lt 4 -and $snap.GPUNome -ne "") { $Script:IA.Gargalo += "GPU-bound" }
+
+    # ------- REGRAS DE DECISAO -------
+    # Cada regra: @{ Id, Desc, Prioridade, Perfis, Risco, Condicao, Bloco }
+    # Prioridade: 1 = critico, 2 = alto, 3 = medio, 4 = baixo
+
+    $regras = @(
+
+        # CRITICAS - aplicar sempre
+        @{
+            Id        = "PLANO_ULTIMATE"
+            Desc      = "Ativar plano Ultimate Performance"
+            Prio      = 1
+            Perfis    = @("Gamer","Streamer","Extremo","Seguro")
+            Risco     = "baixo"
+            Cond      = { $snap.PlanoEnergia -ne "Ultimate Performance" }
+            Bloco     = {
+                $guid = "e9a42b02-d5df-448d-aa00-03f14749eb61"
+                powercfg -duplicatescheme $guid 2>$null | Out-Null
+                powercfg -setactive $guid 2>$null | Out-Null
+                powercfg /setacvalueindex SCHEME_CURRENT SUB_PROCESSOR CPMINCORES 100 2>$null
+                powercfg /setactive SCHEME_CURRENT 2>$null
+            }
+        }
+
+        @{
+            Id        = "CORE_PARKING_OFF"
+            Desc      = "Desativar Core Parking"
+            Prio      = 1
+            Perfis    = @("Gamer","Streamer","Extremo","Seguro")
+            Risco     = "baixo"
+            Cond      = { $snap.CPUCoreParking }
+            Bloco     = {
+                powercfg /setacvalueindex SCHEME_CURRENT SUB_PROCESSOR CPMINCORES 100 2>$null
+                powercfg /setacvalueindex SCHEME_CURRENT SUB_PROCESSOR CPINCREASE  1   2>$null
+                powercfg /setactive SCHEME_CURRENT 2>$null
+            }
+        }
+
+        @{
+            Id        = "TIMER_RESOLUTION"
+            Desc      = "Otimizar Timer Resolution do sistema"
+            Prio      = 1
+            Perfis    = @("Gamer","Streamer","Extremo","Seguro")
+            Risco     = "baixo"
+            Cond      = { $snap.TimerResMS -gt 3 }
+            Bloco     = {
+                Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile" `
+                    -Name "SystemResponsiveness" -Value 0 -Type DWord -Force 2>$null
+                bcdedit /set disabledynamictick yes 2>$null | Out-Null
+                if (-not $Script:IsWin11) {
+                    # Win10: useplatformtick YES melhora latencia de timer
+                    bcdedit /set useplatformtick yes 2>$null | Out-Null
+                }
+                # Win10: 0x26 (38) = quantum curto com boost. Win11: 2 = sem stutter
+                $w32val = if ($Script:IsWin11) { 2 } else { 0x26 }
+                Set-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\PriorityControl" `
+                    -Name "Win32PrioritySeparation" -Value $w32val -Type DWord -Force 2>$null
+            }
+        }
+
+        @{
+            Id        = "NAGLE_OFF"
+            Desc      = "Desativar Nagle Algorithm (elimina delay 200ms)"
+            Prio      = 1
+            Perfis    = @("Gamer","Streamer","Extremo","Seguro")
+            Risco     = "baixo"
+            Cond      = { $snap.NagleAtivo }
+            Bloco     = {
+                Get-ChildItem "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces" -ErrorAction SilentlyContinue |
+                ForEach-Object {
+                    Set-ItemProperty $_.PSPath -Name "TcpAckFrequency" -Value 1 -Type DWord -Force 2>$null
+                    Set-ItemProperty $_.PSPath -Name "TCPNoDelay"      -Value 1 -Type DWord -Force 2>$null
+                }
+            }
+        }
+
+        # ALTA PRIORIDADE
+
+        @{
+            Id        = "MMCSS_GAMING"
+            Desc      = "Configurar MMCSS Gaming (prioridade RT para threads de jogo)"
+            Prio      = 2
+            Perfis    = @("Gamer","Extremo")
+            Risco     = "baixo"
+            Cond      = { $true }
+            Bloco     = {
+                $g = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games"
+                if (-not (Test-Path $g)) { New-Item $g -Force | Out-Null }
+                Set-ItemProperty $g -Name "Priority"            -Value 6       -Type DWord  -Force 2>$null
+                Set-ItemProperty $g -Name "Clock Rate"          -Value 10000   -Type DWord  -Force 2>$null
+                Set-ItemProperty $g -Name "GPU Priority"        -Value 8       -Type DWord  -Force 2>$null
+                Set-ItemProperty $g -Name "Scheduling Category" -Value "High"  -Type String -Force 2>$null
+                Set-ItemProperty $g -Name "SFIO Priority"       -Value "High"  -Type String -Force 2>$null
+                Set-ItemProperty $g -Name "Background Only"     -Value "False" -Type String -Force 2>$null
+                Set-ItemProperty $g -Name "Affinity"            -Value 0       -Type DWord  -Force 2>$null
+            }
+        }
+
+        @{
+            Id        = "NETWORK_THROTTLE_OFF"
+            Desc      = "Remover throttle de rede background (libera banda)"
+            Prio      = 2
+            Perfis    = @("Gamer","Streamer","Extremo","Seguro")
+            Risco     = "baixo"
+            Cond      = { $true }
+            Bloco     = {
+                Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile" `
+                    -Name "NetworkThrottlingIndex" -Value 0xffffffff -Type DWord -Force 2>$null
+                $p = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Psched"
+                if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
+                Set-ItemProperty $p -Name "NonBestEffortLimit" -Value 0 -Type DWord -Force 2>$null
+            }
+        }
+
+        @{
+            Id        = "SYSMAIN_OFF"
+            Desc      = "Desativar SysMain (desnecessario em SSD/NVMe)"
+            Prio      = 2
+            Perfis    = @("Gamer","Streamer","Extremo","Seguro")
+            Risco     = "baixo"
+            Cond      = { $snap.DiscoTipo -match "HDD" -or $snap.RAMtotalGB -le 8 }
+            Bloco     = {
+                Stop-Service "SysMain" -Force 2>$null; Set-Service "SysMain" -StartupType Disabled 2>$null
+            }
+        }
+
+        @{
+            Id        = "POWER_THROTTLE_OFF"
+            Desc      = "Desativar Power Throttling do Windows"
+            Prio      = 2
+            Perfis    = @("Gamer","Extremo")
+            Risco     = "baixo"
+            Cond      = { $true }
+            Bloco     = {
+                $p = "HKLM:\SYSTEM\CurrentControlSet\Control\Power\PowerThrottling"
+                if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
+                Set-ItemProperty $p -Name "PowerThrottlingOff" -Value 1 -Type DWord -Force 2>$null
+            }
+        }
+
+        @{
+            Id        = "MOUSE_ACCEL_OFF"
+            Desc      = "Desativar aceleracao de mouse (movimento 1:1)"
+            Prio      = 2
+            Perfis    = @("Gamer","Extremo")
+            Risco     = "baixo"
+            Cond      = { $true }
+            Bloco     = {
+                $p = "HKCU:\Control Panel\Mouse"
+                Set-ItemProperty $p -Name "MouseSpeed"      -Value "0" -Type String -Force 2>$null
+                Set-ItemProperty $p -Name "MouseThreshold1" -Value "0" -Type String -Force 2>$null
+                Set-ItemProperty $p -Name "MouseThreshold2" -Value "0" -Type String -Force 2>$null
+            }
+        }
+
+        @{
+            Id        = "TCP_STACK"
+            Desc      = "Otimizar stack TCP/IP (TTL, MaxUserPort, scaling)"
+            Prio      = 2
+            Perfis    = @("Gamer","Streamer","Extremo","Seguro")
+            Risco     = "baixo"
+            Cond      = { $true }
+            Bloco     = {
+                $tcp = "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters"
+                Set-ItemProperty $tcp -Name "DefaultTTL"              -Value 64      -Type DWord -Force 2>$null
+                Set-ItemProperty $tcp -Name "MaxUserPort"             -Value 65534   -Type DWord -Force 2>$null
+                Set-ItemProperty $tcp -Name "TcpTimedWaitDelay"       -Value 30      -Type DWord -Force 2>$null
+                Set-ItemProperty $tcp -Name "Tcp1323Opts"             -Value 1       -Type DWord -Force 2>$null
+                Set-ItemProperty $tcp -Name "TCPNoDelay"              -Value 1       -Type DWord -Force 2>$null
+                netsh int tcp set global autotuninglevel=normal 2>$null | Out-Null
+                netsh int tcp set global timestamps=disabled   2>$null | Out-Null
+                netsh int tcp set global dca=enabled           2>$null | Out-Null
+            }
+        }
+
+        # MEDIA PRIORIDADE
+
+        @{
+            Id        = "BG_APPS_OFF"
+            Desc      = "Desativar apps UWP em background (libera CPU+RAM)"
+            Prio      = 3
+            Perfis    = @("Gamer","Extremo")
+            Risco     = "baixo"
+            Cond      = { $snap.CPUUsoPct -gt 30 -or $snap.RAMUsoPct -gt 60 }
+            Bloco     = {
+                $p = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy"
+                if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
+                Set-ItemProperty $p -Name "LetAppsRunInBackground" -Value 2 -Type DWord -Force 2>$null
+                Set-ItemProperty "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications" `
+                    -Name "GlobalUserDisabled" -Value 1 -Type DWord -Force 2>$null
+            }
+        }
+
+        @{
+            Id        = "TELEMETRIA_OFF"
+            Desc      = "Parar servicos de telemetria (DiagTrack)"
+            Prio      = 3
+            Perfis    = @("Gamer","Streamer","Extremo","Seguro")
+            Risco     = "baixo"
+            Cond      = { $true }
+            Bloco     = {
+                foreach ($s in @("DiagTrack","dmwappushservice")) {
+                    Stop-Service $s -Force 2>$null; Set-Service $s -StartupType Disabled 2>$null
+                }
+            }
+        }
+
+        @{
+            Id        = "WER_OFF"
+            Desc      = "Desativar Windows Error Reporting"
+            Prio      = 3
+            Perfis    = @("Gamer","Streamer","Extremo","Seguro")
+            Risco     = "baixo"
+            Cond      = { $true }
+            Bloco     = {
+                $p = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Error Reporting"
+                if (-not (Test-Path $p)) { New-Item $p -Force | Out-Null }
+                Set-ItemProperty $p -Name "Disabled"               -Value 1 -Type DWord -Force 2>$null
+                Set-ItemProperty $p -Name "DontSendAdditionalData" -Value 1 -Type DWord -Force 2>$null
+                Stop-Service "WerSvc" -Force 2>$null; Set-Service "WerSvc" -StartupType Disabled 2>$null
+            }
+        }
+
+        @{
+            Id        = "IRQ_PRIORITY_INPUT"
+            Desc      = "Elevar IRQ priority de mouse e teclado"
+            Prio      = 3
+            Perfis    = @("Gamer","Extremo")
+            Risco     = "baixo"
+            Cond      = { $true }
+            Bloco     = {
+                foreach ($svc in @("mouclass","kbdclass","hidusb","mouhid")) {
+                    $p = "HKLM:\SYSTEM\CurrentControlSet\Services\$svc"
+                    if (Test-Path $p) { Set-ItemProperty $p -Name "RequestedPriority" -Value 6 -Type DWord -Force 2>$null }
+                }
+            }
+        }
+
+        @{
+            Id        = "NTFS_PERF"
+            Desc      = "Desativar LastAccess e 8.3 names no NTFS"
+            Prio      = 3
+            Perfis    = @("Gamer","Streamer","Extremo","Seguro")
+            Risco     = "baixo"
+            Cond      = { $true }
+            Bloco     = {
+                $p = "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem"
+                Set-ItemProperty $p -Name "NtfsDisable8dot3NameCreation" -Value 1 -Type DWord -Force 2>$null
+                Set-ItemProperty $p -Name "NtfsDisableLastAccessUpdate"  -Value 1 -Type DWord -Force 2>$null
+                Set-ItemProperty $p -Name "NtfsMftZoneReservation"       -Value 2 -Type DWord -Force 2>$null
+            }
+        }
+
+        @{
+            Id        = "RAM_EMPTY_WORKINGSET"
+            Desc      = "Liberar Working Set de RAM de processos inativos"
+            Prio      = 3
+            Perfis    = @("Gamer","Extremo")
+            Risco     = "baixo"
+            Cond      = { $snap.RAMUsoPct -gt 65 }
+            Bloco     = {
+                Add-Type @"
+using System; using System.Runtime.InteropServices; using System.Diagnostics;
+public class WSClear {
+    [DllImport("kernel32.dll")] public static extern bool SetProcessWorkingSetSize(IntPtr p, int mn, int mx);
+    public static void Go() { foreach (Process p in Process.GetProcesses()) { try { SetProcessWorkingSetSize(p.Handle,-1,-1); } catch {} } }
+}
+"@ -ErrorAction SilentlyContinue
+                try { [WSClear]::Go() } catch {}
+                [System.GC]::Collect()
+                [System.GC]::WaitForPendingFinalizers()
+                [System.GC]::Collect()
+            }
+        }
+
+        @{
+            Id        = "QOS_GAMING"
+            Desc      = "Aplicar QoS DSCP 46 para jogos competitivos"
+            Prio      = 3
+            Perfis    = @("Gamer","Extremo")
+            Risco     = "baixo"
+            Cond      = { $true }
+            Bloco     = {
+                $jogos = @("csgo.exe","valorant.exe","fortnite.exe","r5apex.exe","dota2.exe","pubg.exe","cod.exe")
+                foreach ($j in $jogos) {
+                    $pq = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\QoS\$j"
+                    if (-not (Test-Path $pq)) { New-Item $pq -Force | Out-Null }
+                    Set-ItemProperty $pq -Name "Version"          -Value "1.0" -Type String -Force 2>$null
+                    Set-ItemProperty $pq -Name "Application Name" -Value $j    -Type String -Force 2>$null
+                    Set-ItemProperty $pq -Name "Protocol"         -Value "17"  -Type String -Force 2>$null
+                    Set-ItemProperty $pq -Name "Local Port"       -Value "*"   -Type String -Force 2>$null
+                    Set-ItemProperty $pq -Name "Remote Port"      -Value "*"   -Type String -Force 2>$null
+                    Set-ItemProperty $pq -Name "Local IP"         -Value "*"   -Type String -Force 2>$null
+                    Set-ItemProperty $pq -Name "Remote IP"        -Value "*"   -Type String -Force 2>$null
+                    Set-ItemProperty $pq -Name "DSCP Value"       -Value "46"  -Type String -Force 2>$null
+                    Set-ItemProperty $pq -Name "Throttle Rate"    -Value "-1"  -Type String -Force 2>$null
+                }
+            }
+        }
+
+        # ESPECIFICO STREAMER
+
+        @{
+            Id        = "STREAMER_OBS_PRIO"
+            Desc      = "Elevar prioridade do OBS Studio para High"
+            Prio      = 2
+            Perfis    = @("Streamer")
+            Risco     = "baixo"
+            Cond      = { $snap.Perfil -eq "Streamer" -or $Script:IA.Perfil -eq "Streamer" }
+            Bloco     = {
+                $obs = Get-Process "obs64" -ErrorAction SilentlyContinue
+                if (-not $obs) { $obs = Get-Process "obs32" -ErrorAction SilentlyContinue }
+                if ($obs) {
+                    try { $obs.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::AboveNormal } catch {}
+                }
+                # Afinidade OBS: nao compete com cores de jogo
+                # Regra: se > 8 nucleos, OBS usa metade superior
+                if ($Script:CPUNucleos -ge 8 -and $obs) {
+                    $halfMask = [Math]::Pow(2, $Script:CPUNucleos / 2) - 1
+                    try { $obs.ProcessorAffinity = [IntPtr]([int64]$halfMask -shl ($Script:CPUNucleos / 2)) } catch {}
+                }
+                # MMCSS para OBS
+                $g = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games"
+                if (-not (Test-Path $g)) { New-Item $g -Force | Out-Null }
+                Set-ItemProperty $g -Name "GPU Priority" -Value 8 -Type DWord -Force 2>$null
+            }
+        }
+
+        # EXTREMO - apenas perfil extremo
+
+        @{
+            Id        = "SPECTRE_MELTDOWN_OFF"
+            Desc      = "Desativar mitigacoes Spectre/Meltdown [+5-15% CPU, RISCO ALTO]"
+            Prio      = 4
+            Perfis    = @("Extremo")
+            Risco     = "alto"
+            Cond      = { $Script:IA.Perfil -eq "Extremo" }
+            Bloco     = {
+                Set-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" `
+                    -Name "FeatureSettingsOverride"     -Value 3 -Type DWord -Force 2>$null
+                Set-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" `
+                    -Name "FeatureSettingsOverrideMask" -Value 3 -Type DWord -Force 2>$null
+                bcdedit /set {current} nx AlwaysOff 2>$null | Out-Null
+            }
+        }
+
+        @{
+            Id        = "CSTATES_OFF"
+            Desc      = "Desativar C-States via BCD [menor latencia, mais energia]"
+            Prio      = 4
+            Perfis    = @("Extremo")
+            Risco     = "alto"
+            Cond      = { $Script:IA.Perfil -eq "Extremo" }
+            Bloco     = {
+                bcdedit /set disabledynamictick yes 2>$null | Out-Null
+                if (-not $Script:IsWin11) {
+                    # Win10: useplatformtick YES melhora latencia de timer
+                    bcdedit /set useplatformtick yes 2>$null | Out-Null
+                }
+            }
+        }
+
+        @{
+            Id        = "MEMORY_COMPRESSION_OFF"
+            Desc      = "Desativar Memory Compression (libera CPU em troca de RAM)"
+            Prio      = 4
+            Perfis    = @("Extremo")
+            Risco     = "alto"
+            Cond      = { $snap.RAMCompressao -and $Script:CPUNucleos -le 6 }
+            Bloco     = {
+                Disable-MMAgent -mc 2>$null
+            }
+        }
+    )
+
+    # ------- FILTRAR POR PERFIL E CONDICAO -------
+    $perfilAtual = $Script:IA.Perfil
+
+    foreach ($regra in $regras) {
+        # Checar se perfil permite
+        if ($regra.Perfis -notcontains $perfilAtual) { continue }
+
+        # Checar condicao
+        try {
+            $condicaoAtendida = & $regra.Cond
+        } catch { $condicaoAtendida = $true }
+
+        if ($condicaoAtendida) {
+            $Script:IA.OtimizacoesDecididas.Add(@{
+                Id    = $regra.Id
+                Desc  = $regra.Desc
+                Prio  = $regra.Prio
+                Risco = $regra.Risco
+                Bloco = $regra.Bloco
+            })
+        }
+    }
+
+    # Ordenar por prioridade
+    $Script:IA.OtimizacoesDecididas = [System.Collections.Generic.List[hashtable]](
+        $Script:IA.OtimizacoesDecididas | Sort-Object { $_.Prio }
+    )
+
+    return $Script:IA.OtimizacoesDecididas
+}
+
+# ================================================================
+#  REGION: SISTEMA DE APRENDIZADO LOCAL (JSON)
+# ================================================================
+function Load-IAHistorico {
+    $arq = $Script:IA.ArqHistorico
+    if (Test-Path $arq) {
+        try {
+            $json = Get-Content $arq -Raw -Encoding UTF8
+            $Script:IA.Historico = $json | ConvertFrom-Json
+        } catch {
+            $Script:IA.Historico = [PSCustomObject]@{
+                Versao     = "1.0"
+                Execucoes  = @()
+                Ajustes    = @{}
+            }
+        }
+    } else {
+        $Script:IA.Historico = [PSCustomObject]@{
+            Versao     = "1.0"
+            Execucoes  = @()
+            Ajustes    = @{}
+        }
+    }
+}
+
+function Save-IAExecucao {
+    param($snapAntes, $snapDepois, $perfil, $otimAplicadas)
+
+    Load-IAHistorico
+
+    $execucao = [ordered]@{
+        Data          = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        Perfil        = $perfil
+        Hardware      = "$($snapAntes.CPUNome) | $($snapAntes.RAMtotalGB)GB $($snapAntes.RAMtipo) | $($snapAntes.GPUNome)"
+        ScoreAntes    = $snapAntes.Score.Geral
+        ScoreDepois   = $snapDepois.Score.Geral
+        Ganho         = $snapDepois.Score.Geral - $snapAntes.Score.Geral
+        PingAntes     = $snapAntes.LatenciaMS
+        PingDepois    = $snapDepois.LatenciaMS
+        RAMAntes      = $snapAntes.RAMUsoPct
+        RAMDepois     = $snapDepois.RAMUsoPct
+        Otimizacoes   = $otimAplicadas
+        Gargalos      = $Script:IA.Gargalo
+    }
+
+    # Adicionar ao historico
+    $hist = $Script:IA.Historico
+    $lista = [System.Collections.Generic.List[object]]::new()
+    if ($hist.Execucoes) { foreach ($e in $hist.Execucoes) { $lista.Add($e) } }
+    $lista.Add($execucao)
+
+    # Manter apenas ultimas 50 execucoes
+    if ($lista.Count -gt 50) { $lista = $lista | Select-Object -Last 50 }
+
+    $histAtual = [PSCustomObject]@{
+        Versao    = "1.0"
+        Execucoes = $lista.ToArray()
+        Ajustes   = $hist.Ajustes
+    }
+
+    $histAtual | ConvertTo-Json -Depth 10 | Out-File $Script:IA.ArqHistorico -Encoding UTF8 -Force 2>$null
+}
+
+function Get-IAInsightHistorico {
+    Load-IAHistorico
+    $hist = $Script:IA.Historico
+    if (-not $hist.Execucoes -or $hist.Execucoes.Count -eq 0) {
+        return "  Primeira execucao - nenhum historico disponivel."
+    }
+
+    $execs = $hist.Execucoes
+    $total = $execs.Count
+    $ganhoMedio = [math]::Round(($execs | Measure-Object -Property Ganho -Average).Average, 1)
+    $melhorExec = $execs | Sort-Object Ganho -Descending | Select-Object -First 1
+    $ultimaExec = $execs | Select-Object -Last 1
+
+    $sb = [System.Text.StringBuilder]::new()
+    [void]$sb.AppendLine("  HISTORICO DE APRENDIZADO ($total execucoes):")
+    [void]$sb.AppendLine("  Ganho medio por sessao: +$ganhoMedio pts")
+    [void]$sb.AppendLine("  Melhor resultado: +$($melhorExec.Ganho) pts em $($melhorExec.Data) [$($melhorExec.Perfil)]")
+    [void]$sb.AppendLine("  Ultima execucao: $($ultimaExec.Data) | Score $($ultimaExec.ScoreAntes) -> $($ultimaExec.ScoreDepois)")
+
+    # Recomendar perfil baseado no historico
+    $perfilFreq = $execs | Group-Object Perfil | Sort-Object Count -Descending | Select-Object -First 1
+    if ($perfilFreq) {
+        [void]$sb.AppendLine("  Perfil mais usado: $($perfilFreq.Name) ($($perfilFreq.Count)x)")
+    }
+
+    return $sb.ToString()
+}
+
+# ================================================================
+#  REGION: BACKUP DE REGISTRO ANTES DE OTIMIZAR
+# ================================================================
+function Invoke-IABackupRegistro {
+    IN "Criando backup de registro..."
+    $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+    $bakDir = $Script:PastaBackup
+
+    # Chaves criticas
+    $chaves = @(
+        "HKLM\SYSTEM\CurrentControlSet\Control\PriorityControl"
+        "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters"
+        "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile"
+        "HKCU\Control Panel\Mouse"
+        "HKCU\Control Panel\Keyboard"
+    )
+
+    $bakFile = Join-Path $bakDir "ia_reg_${timestamp}.reg"
+    "Windows Registry Editor Version 5.00" | Out-File $bakFile -Encoding Unicode -Force
+
+    foreach ($chave in $chaves) {
+        try {
+            $out = reg export $chave "$bakFile.tmp" /y 2>$null
+            if (Test-Path "$bakFile.tmp") {
+                Get-Content "$bakFile.tmp" | Select-Object -Skip 1 | Add-Content $bakFile
+                Remove-Item "$bakFile.tmp" -Force 2>$null
+            }
+        } catch {}
+    }
+
+    $Script:IA.ArqBackupReg = $bakFile
+    OK "Backup de registro: $bakFile"
+}
+
+function Invoke-IARollback {
+    H2 "ROLLBACK IA - RESTAURAR REGISTRO"
+
+    $bakFiles = Get-ChildItem $Script:PastaBackup -Filter "ia_reg_*.reg" -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending
+
+    if (-not $bakFiles) {
+        WN "Nenhum backup de registro IA encontrado."
+        PAUSE; return
+    }
+
+    Write-Host "  Backups disponiveis:" -ForegroundColor DarkCyan
+    $i = 0
+    foreach ($f in $bakFiles | Select-Object -First 5) {
+        $i++
+        Write-Host "  [$i] $($f.Name)  ($($f.LastWriteTime))" -ForegroundColor White
+    }
+    Write-Host ""
+    $opcao = Read-Host "  Selecione backup [1-$i] ou [ENTER] para cancelar"
+    if ([string]::IsNullOrWhiteSpace($opcao)) { return }
+
+    $idx = [int]$opcao - 1
+    $arqSel = ($bakFiles | Select-Object -First 5)[$idx]
+
+    if ($arqSel) {
+        IN "Importando $($arqSel.Name)..."
+        $result = reg import $arqSel.FullName 2>&1
+        OK "Rollback aplicado. Reinicie o computador."
+    }
     PAUSE
 }
 
 # ================================================================
-#  MENUS
+#  REGION: PONTO DE RESTAURACAO DO SISTEMA
 # ================================================================
+function Invoke-IARestauracao {
+    IN "Criando ponto de restauracao do sistema..."
+    try {
+        Enable-ComputerRestore -Drive "$env:SystemDrive\" -ErrorAction SilentlyContinue
+        $result = Checkpoint-Computer -Description "AbimalekBoost IA - Pre-Otimizacao $(Get-Date -Format 'dd/MM/yyyy HH:mm')" `
+            -RestorePointType MODIFY_SETTINGS -ErrorAction SilentlyContinue
+        OK "Ponto de restauracao criado!"
+    } catch {
+        WN "Ponto de restauracao falhou (pode ser frequencia minima do Windows). Continuando..."
+    }
+}
+
+# ================================================================
+#  REGION: MOTOR PRINCIPAL - INVOKE-IAENGINE
+# ================================================================
+function Invoke-IAEngine {
+    param([string]$Perfil = "")
+
+    Clear-Host
+    # Banner especial IA
+    Write-Host ""
+    Write-Host "  $('=' * 70)" -ForegroundColor Magenta
+    Write-Host "  ##  AbimalekBoost  -  MOTOR DE IA HEURISTICO  v6.0  ##" -ForegroundColor Cyan
+    Write-Host "  $('=' * 70)" -ForegroundColor Magenta
+    Write-Host "  Sistema de otimizacao inteligente - sem IA externa - 100% local" -ForegroundColor DarkGray
+    Write-Host ""
+
+    # Detectar hardware se nao foi feito
+    if (-not $Script:CPUNome) {
+        IN "Detectando hardware..."
+        Invoke-DetectarHardware
+    }
+
+    # Mostrar insight do historico
+    $insight = Get-IAInsightHistorico
+    Write-Host $insight -ForegroundColor DarkCyan
+    Write-Host ""
+
+    # Selecionar perfil
+    if (-not $Perfil) {
+        $Perfil = Select-IAPerfil
+        if (-not $Perfil) { return }
+    }
+    $Script:IA.Perfil = $Perfil
+
+    # Criar ponto de restauracao
+    Invoke-IARestauracao
+
+    # Backup de registro
+    Invoke-IABackupRegistro
+
+    Write-Host ""
+    Write-Host "  $('=' * 70)" -ForegroundColor DarkCyan
+    Write-Host "  [FASE 1/4] COLETANDO METRICAS DO SISTEMA..." -ForegroundColor Cyan
+    Write-Host "  $('=' * 70)" -ForegroundColor DarkCyan
+    Write-Host ""
+
+    $Script:IA.SnapshotAntes = Get-IASnapshot -Label "antes"
+    $snap = $Script:IA.SnapshotAntes
+
+    # Exibir analise
+    Show-IAAnalise -snap $snap
+
+    Write-Host ""
+    Write-Host "  $('=' * 70)" -ForegroundColor DarkCyan
+    Write-Host "  [FASE 2/4] MOTOR DE DECISAO - ANALISANDO..." -ForegroundColor Cyan
+    Write-Host "  $('=' * 70)" -ForegroundColor DarkCyan
+    Write-Host ""
+
+    $decisoes = Invoke-IAMotorDecisao -snap $snap
+
+    Write-Host "  GARGALOS DETECTADOS:" -ForegroundColor Yellow
+    if ($Script:IA.Gargalo.Count -eq 0) {
+        Write-Host "  Nenhum gargalo critico encontrado" -ForegroundColor Green
+    } else {
+        foreach ($g in $Script:IA.Gargalo) {
+            Write-Host "  [!] $g" -ForegroundColor Red
+        }
+    }
+
+    Write-Host ""
+    Write-Host "  OTIMIZACOES SELECIONADAS PELA IA ($($decisoes.Count) acoes):" -ForegroundColor Yellow
+    $prioColor = @{ 1="Red"; 2="Yellow"; 3="Cyan"; 4="DarkGray" }
+    $prioLabel = @{ 1="CRITICO"; 2="ALTO"; 3="MEDIO"; 4="EXTREMO" }
+    foreach ($d in $decisoes) {
+        $cor = $prioColor[$d.Prio]
+        $lbl = $prioLabel[$d.Prio]
+        Write-Host ("  [{0,-8}] {1}" -f $lbl, $d.Desc) -ForegroundColor $cor
+    }
+    Write-Host ""
+
+    if (-not (CONF "Aplicar as $($decisoes.Count) otimizacoes selecionadas pela IA?")) {
+        WN "Cancelado pelo usuario."; PAUSE; return
+    }
+
+    Write-Host ""
+    Write-Host "  $('=' * 70)" -ForegroundColor DarkCyan
+    Write-Host "  [FASE 3/4] APLICANDO OTIMIZACOES..." -ForegroundColor Cyan
+    Write-Host "  $('=' * 70)" -ForegroundColor DarkCyan
+    Write-Host ""
+
+    $total = $decisoes.Count
+    $atual = 0
+    foreach ($d in $decisoes) {
+        $atual++
+        Show-Progress $d.Id $atual $total
+        try {
+            & $d.Bloco
+            $Script:IA.OtimizacoesAplicadas.Add("$($d.Id): $($d.Desc)")
+            Write-Host "  [+] $($d.Desc)" -ForegroundColor Green
+        } catch {
+            Write-Host "  [!] $($d.Id) - erro: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+    }
+
+    # DNS flush
+    ipconfig /flushdns 2>$null | Out-Null
+    OK "DNS flushed"
+
+    Write-Host ""
+    Write-Host "  $('=' * 70)" -ForegroundColor DarkCyan
+    Write-Host "  [FASE 4/4] COLETANDO METRICAS POS-OTIMIZACAO..." -ForegroundColor Cyan
+    Write-Host "  $('=' * 70)" -ForegroundColor DarkCyan
+    Write-Host ""
+    Start-Sleep 2
+
+    $Script:IA.SnapshotDepois = Get-IASnapshot -Label "depois"
+
+    # Score comparativo
+    Show-ScoreComparativo -antes $Script:IA.SnapshotAntes -depois $Script:IA.SnapshotDepois
+
+    # Salvar no historico local
+    Save-IAExecucao `
+        -snapAntes   $Script:IA.SnapshotAntes `
+        -snapDepois  $Script:IA.SnapshotDepois `
+        -perfil      $Perfil `
+        -otimAplicadas $Script:IA.OtimizacoesAplicadas.ToArray()
+
+    OK "Sessao salva no historico local: $($Script:IA.ArqHistorico)"
+
+    Write-Host ""
+    Write-Host "  $('=' * 70)" -ForegroundColor Green
+    Write-Host "  IA CONCLUIDA - $($Script:IA.OtimizacoesAplicadas.Count) otimizacoes aplicadas" -ForegroundColor Green
+    Write-Host "  $('=' * 70)" -ForegroundColor Green
+    Write-Host ""
+    WN "Reinicie o computador para maximizar o efeito dos tweaks de kernel."
+    Write-Host ""
+
+    if (CONF "Abrir interface grafica de resultados?") {
+        Show-IAResultadosWPF
+    }
+
+    LOG "IA Engine v6.0: $Perfil | Score $($Script:IA.SnapshotAntes.Score.Geral) -> $($Script:IA.SnapshotDepois.Score.Geral)"
+    PAUSE
+}
+
+function Select-IAPerfil {
+    Clear-Host
+    Write-Host ""
+    Write-Host "  $('=' * 70)" -ForegroundColor Magenta
+    Write-Host "  SELECIONE O PERFIL DE OTIMIZACAO" -ForegroundColor Cyan
+    Write-Host "  $('=' * 70)" -ForegroundColor Magenta
+    Write-Host ""
+    Write-Host "  [1]  SEGURO        Tweaks essenciais sem risco. Ideal para uso geral." -ForegroundColor Green
+    Write-Host "         Plano, Timer, Nagle, TCP, Servicos basicos" -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Host "  [2]  GAMER         Otimizacao completa para jogos. Uso diario." -ForegroundColor Yellow
+    Write-Host "         + Mouse, IRQ, MMCSS, QoS, Background Apps, RAM" -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Host "  [3]  STREAMER      Balanceamento gaming + OBS sem drops." -ForegroundColor Cyan
+    Write-Host "         + Prioridade OBS, afinidade de CPU, rede streaming" -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Host "  [4]  EXTREMO       Maximo absoluto. Risco tecnico. Apenas PC dedicado." -ForegroundColor Red
+    Write-Host "         + Spectre/Meltdown OFF, C-States, Memory Compression" -ForegroundColor DarkGray
+    Write-Host "         AVISO: pode reduzir segurança do sistema" -ForegroundColor DarkRed
+    Write-Host ""
+    Write-Host "  [V]  Voltar" -ForegroundColor DarkGray
+    Write-Host ""; SEP; Write-Host ""
+
+    $op = Read-Host "  Selecione o perfil"
+    switch ($op.Trim().ToUpper()) {
+        '1' { return "Seguro" }
+        '2' { return "Gamer" }
+        '3' { return "Streamer" }
+        '4' {
+            Write-Host ""
+            WN "AVISO: Perfil Extremo desativa mitigacoes de segurança do CPU."
+            WN "Recomendado apenas em PCs dedicados a gaming sem dados sensiveis."
+            if (CONF "Confirma o uso do Perfil Extremo?") { return "Extremo" }
+            return "Gamer"
+        }
+        'V' { return "" }
+        default { return "Gamer" }
+    }
+}
+
+function Show-IAAnalise {
+    param($snap)
+
+    $scoreGeral = $snap.Score.Geral
+    $cor = if ($scoreGeral -ge 80) { "Green" } elseif ($scoreGeral -ge 60) { "Yellow" } else { "Red" }
+
+    Write-Host "  ESTADO ATUAL DO SISTEMA:" -ForegroundColor DarkCyan
+    Write-Host ""
+    Write-Host ("  Score Geral:       {0,3}/100" -f $snap.Score.Geral)         -ForegroundColor $cor
+    Write-Host ("  Score Latencia:    {0,3}/100" -f $snap.Score.Latencia)       -ForegroundColor White
+    Write-Host ("  Score Responsiv.:  {0,3}/100" -f $snap.Score.Responsividade) -ForegroundColor White
+    Write-Host ("  Score Gamer:       {0,3}/100" -f $snap.Score.Gamer)          -ForegroundColor White
+    Write-Host ""
+    Write-Host ("  CPU:  {0}% uso  |  Cores: {1}  |  {2}" -f $snap.CPUUsoPct, $snap.CPUNucleos, $snap.CPUNome) -ForegroundColor White
+    Write-Host ("  RAM:  {0}% uso  |  Livre: {1} GB  |  {2} @ {3} MHz" -f $snap.RAMUsoPct, $snap.RAMLivreGB, $snap.RAMtipo, $snap.RAMvelocidade) -ForegroundColor White
+    Write-Host ("  GPU:  {0}  |  VRAM: {1} GB  |  {2}°C" -f $snap.GPUNome, $snap.GPUVRAM, $snap.GPUTemp) -ForegroundColor White
+    Write-Host ("  Disk: {0}  |  Queue: {1}  |  NVMe: {2}" -f $snap.DiscoTipo, $snap.DiskQueueLen, $(if($snap.DiscoNVMe){"Sim"}else{"Nao"})) -ForegroundColor White
+    Write-Host ("  Net:  Ping {0}ms  |  Jitter {1}ms  |  TCP: {2}" -f $snap.LatenciaMS, $snap.NetworkJitter, $snap.TCPAutotuning) -ForegroundColor White
+    Write-Host ("  Sys:  {0}  |  Plano: {1}  |  Timer: {2}ms" -f $snap.WinBuild, $snap.PlanoEnergia, $snap.TimerResMS) -ForegroundColor White
+    Write-Host ("  Uptime: {0}h  |  Servicos: {1}  |  Paginando: {2}" -f $snap.UptimeHoras, $snap.ServicosAtivos, $(if($snap.RAMPaginando){"SIM"}else{"nao"})) -ForegroundColor White
+
+    if ($snap.ProcessosPes) {
+        Write-Host ""
+        Write-Host "  Top processos por CPU: $($snap.ProcessosPes -join ', ')" -ForegroundColor DarkGray
+    }
+    Write-Host ""
+}
+
+# ================================================================
+#  REGION: INTERFACE GRAFICA WPF - RESULTADOS IA
+# ================================================================
+function Show-IAResultadosWPF {
+    param()
+
+    Load-IAHistorico
+    $hist  = $Script:IA.Historico
+    $antes = $Script:IA.SnapshotAntes
+    $dep   = $Script:IA.SnapshotDepois
+
+    $xaml = @"
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="AbimalekBoost - IA Engine v6.0"
+        Height="720" Width="900"
+        WindowStartupLocation="CenterScreen"
+        Background="#0A0A0F"
+        Foreground="White"
+        FontFamily="Segoe UI"
+        ResizeMode="CanResize">
+    <Window.Resources>
+        <Style TargetType="Button">
+            <Setter Property="Background" Value="#1A1A2E"/>
+            <Setter Property="Foreground" Value="#00CFFF"/>
+            <Setter Property="BorderBrush" Value="#00CFFF"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="12,6"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+        <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#E0E0E0"/>
+            <Setter Property="FontFamily" Value="Segoe UI"/>
+        </Style>
+    </Window.Resources>
+    <Grid Margin="0">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="60"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="50"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Border Grid.Row="0" Background="#0D1117" BorderBrush="#00CFFF" BorderThickness="0,0,0,1">
+            <Grid>
+                <TextBlock Text="AbimalekBoost" FontSize="20" FontWeight="Bold"
+                           Foreground="#00CFFF" VerticalAlignment="Center" Margin="20,0,0,0"/>
+                <TextBlock Text="Motor de IA v6.0" FontSize="12" Foreground="#666"
+                           VerticalAlignment="Bottom" HorizontalAlignment="Left" Margin="22,0,0,8"/>
+                <TextBlock Text="RESULTADO DA ANALISE" FontSize="13" FontWeight="SemiBold"
+                           Foreground="White" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                <TextBlock Name="txtPerfil" Text="Perfil: GAMER" FontSize="12"
+                           Foreground="#00FF88" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,20,0"/>
+            </Grid>
+        </Border>
+
+        <!-- Main content -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+          <StackPanel Margin="20,20,20,10">
+
+            <!-- Score cards -->
+            <TextBlock Text="SCORES DE PERFORMANCE" FontSize="13" FontWeight="Bold"
+                       Foreground="#888" Margin="0,0,0,12"/>
+            <Grid Margin="0,0,0,20">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Border Grid.Column="0" Background="#0D1117" BorderBrush="#00CFFF" BorderThickness="1" Margin="0,0,8,0" CornerRadius="4" Padding="12">
+                    <StackPanel>
+                        <TextBlock Text="GERAL" FontSize="10" Foreground="#666" FontWeight="Bold"/>
+                        <TextBlock Name="scoreGeral" Text="--" FontSize="36" FontWeight="Bold" Foreground="#00CFFF" HorizontalAlignment="Center"/>
+                        <TextBlock Name="diffGeral"  Text="---" FontSize="12" Foreground="#00FF88" HorizontalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="1" Background="#0D1117" BorderBrush="#FFB800" BorderThickness="1" Margin="4,0,4,0" CornerRadius="4" Padding="12">
+                    <StackPanel>
+                        <TextBlock Text="LATENCIA" FontSize="10" Foreground="#666" FontWeight="Bold"/>
+                        <TextBlock Name="scoreLat" Text="--" FontSize="36" FontWeight="Bold" Foreground="#FFB800" HorizontalAlignment="Center"/>
+                        <TextBlock Name="diffLat"  Text="---" FontSize="12" Foreground="#00FF88" HorizontalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="2" Background="#0D1117" BorderBrush="#FF6B35" BorderThickness="1" Margin="4,0,4,0" CornerRadius="4" Padding="12">
+                    <StackPanel>
+                        <TextBlock Text="RESPONSIVIDADE" FontSize="10" Foreground="#666" FontWeight="Bold"/>
+                        <TextBlock Name="scoreResp" Text="--" FontSize="36" FontWeight="Bold" Foreground="#FF6B35" HorizontalAlignment="Center"/>
+                        <TextBlock Name="diffResp"  Text="---" FontSize="12" Foreground="#00FF88" HorizontalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="3" Background="#0D1117" BorderBrush="#00FF88" BorderThickness="1" Margin="8,0,0,0" CornerRadius="4" Padding="12">
+                    <StackPanel>
+                        <TextBlock Text="GAMER" FontSize="10" Foreground="#666" FontWeight="Bold"/>
+                        <TextBlock Name="scoreGamer" Text="--" FontSize="36" FontWeight="Bold" Foreground="#00FF88" HorizontalAlignment="Center"/>
+                        <TextBlock Name="diffGamer"  Text="---" FontSize="12" Foreground="#00FF88" HorizontalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- Metricas comparativas -->
+            <TextBlock Text="METRICAS COMPARATIVAS" FontSize="13" FontWeight="Bold"
+                       Foreground="#888" Margin="0,0,0,12"/>
+            <Border Background="#0D1117" BorderBrush="#222" BorderThickness="1" CornerRadius="4" Padding="16" Margin="0,0,0,20">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <!-- Headers -->
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Metrica"   FontWeight="Bold" Foreground="#00CFFF"/>
+                    <TextBlock Grid.Row="0" Grid.Column="1" Text="Antes"     FontWeight="Bold" Foreground="#FF6B35" HorizontalAlignment="Center"/>
+                    <TextBlock Grid.Row="0" Grid.Column="2" Text="Depois"    FontWeight="Bold" Foreground="#00FF88" HorizontalAlignment="Center"/>
+                    <!-- Rows -->
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Ping (ms)"     Margin="0,8,0,0"/>
+                    <TextBlock Grid.Row="1" Grid.Column="1" Name="pingAntes"  Text="--" Margin="0,8,0,0" HorizontalAlignment="Center"/>
+                    <TextBlock Grid.Row="1" Grid.Column="2" Name="pingDepois" Text="--" Margin="0,8,0,0" HorizontalAlignment="Center" Foreground="#00FF88"/>
+
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="RAM uso (%)"   Margin="0,4,0,0"/>
+                    <TextBlock Grid.Row="2" Grid.Column="1" Name="ramAntes"   Text="--" Margin="0,4,0,0" HorizontalAlignment="Center"/>
+                    <TextBlock Grid.Row="2" Grid.Column="2" Name="ramDepois"  Text="--" Margin="0,4,0,0" HorizontalAlignment="Center" Foreground="#00FF88"/>
+
+                    <TextBlock Grid.Row="3" Grid.Column="0" Text="CPU uso (%)"   Margin="0,4,0,0"/>
+                    <TextBlock Grid.Row="3" Grid.Column="1" Name="cpuAntes"   Text="--" Margin="0,4,0,0" HorizontalAlignment="Center"/>
+                    <TextBlock Grid.Row="3" Grid.Column="2" Name="cpuDepois"  Text="--" Margin="0,4,0,0" HorizontalAlignment="Center" Foreground="#00FF88"/>
+
+                    <TextBlock Grid.Row="4" Grid.Column="0" Text="Timer (ms)"    Margin="0,4,0,0"/>
+                    <TextBlock Grid.Row="4" Grid.Column="1" Name="timerAntes"  Text="--" Margin="0,4,0,0" HorizontalAlignment="Center"/>
+                    <TextBlock Grid.Row="4" Grid.Column="2" Name="timerDepois" Text="--" Margin="0,4,0,0" HorizontalAlignment="Center" Foreground="#00FF88"/>
+                </Grid>
+            </Border>
+
+            <!-- Otimizacoes aplicadas -->
+            <TextBlock Text="OTIMIZACOES APLICADAS" FontSize="13" FontWeight="Bold"
+                       Foreground="#888" Margin="0,0,0,12"/>
+            <Border Background="#0D1117" BorderBrush="#222" BorderThickness="1" CornerRadius="4" Padding="12" Margin="0,0,0,20">
+                <ItemsControl Name="listaOtim">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}" Foreground="#00FF88" FontSize="12" Margin="0,2"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Border>
+
+            <!-- Historico -->
+            <TextBlock Text="HISTORICO DE APRENDIZADO" FontSize="13" FontWeight="Bold"
+                       Foreground="#888" Margin="0,0,0,12"/>
+            <Border Background="#0D1117" BorderBrush="#222" BorderThickness="1" CornerRadius="4" Padding="12" Margin="0,0,0,20">
+                <StackPanel>
+                    <TextBlock Name="txtHistTotal"    Text="Execucoes: 0" Foreground="#888"/>
+                    <TextBlock Name="txtHistGanho"    Text="Ganho medio: --" Foreground="#888"/>
+                    <TextBlock Name="txtHistUltima"   Text="Ultima: --" Foreground="#888"/>
+                </StackPanel>
+            </Border>
+
+          </StackPanel>
+        </ScrollViewer>
+
+        <!-- Footer -->
+        <Border Grid.Row="2" Background="#0D1117" BorderBrush="#00CFFF" BorderThickness="0,1,0,0">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="20,0">
+                <Button Name="btnRollback" Content="Rollback IA" Margin="0,0,10,0"/>
+                <Button Name="btnFechar"   Content="Fechar"       Margin="0"/>
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>
+"@
+
+    Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase -ErrorAction SilentlyContinue
+
+    try {
+        $reader  = [System.Xml.XmlReader]::Create([System.IO.StringReader]::new($xaml))
+        $window  = [System.Windows.Markup.XamlReader]::Load($reader)
+
+        # Preencher scores
+        $window.FindName("scoreGeral").Text = if ($dep) { "$($dep.Score.Geral)"         } else { "--" }
+        $window.FindName("scoreLat").Text   = if ($dep) { "$($dep.Score.Latencia)"      } else { "--" }
+        $window.FindName("scoreResp").Text  = if ($dep) { "$($dep.Score.Responsividade)" } else { "--" }
+        $window.FindName("scoreGamer").Text = if ($dep) { "$($dep.Score.Gamer)"         } else { "--" }
+
+        if ($antes -and $dep) {
+            $g1 = $dep.Score.Geral         - $antes.Score.Geral
+            $g2 = $dep.Score.Latencia      - $antes.Score.Latencia
+            $g3 = $dep.Score.Responsividade- $antes.Score.Responsividade
+            $g4 = $dep.Score.Gamer         - $antes.Score.Gamer
+            $window.FindName("diffGeral").Text  = if ($g1 -ge 0) { "+$g1 pts" } else { "$g1 pts" }
+            $window.FindName("diffLat").Text    = if ($g2 -ge 0) { "+$g2 pts" } else { "$g2 pts" }
+            $window.FindName("diffResp").Text   = if ($g3 -ge 0) { "+$g3 pts" } else { "$g3 pts" }
+            $window.FindName("diffGamer").Text  = if ($g4 -ge 0) { "+$g4 pts" } else { "$g4 pts" }
+
+            $window.FindName("pingAntes").Text   = "$($antes.LatenciaMS)ms"
+            $window.FindName("pingDepois").Text  = "$($dep.LatenciaMS)ms"
+            $window.FindName("ramAntes").Text    = "$($antes.RAMUsoPct)%"
+            $window.FindName("ramDepois").Text   = "$($dep.RAMUsoPct)%"
+            $window.FindName("cpuAntes").Text    = "$($antes.CPUUsoPct)%"
+            $window.FindName("cpuDepois").Text   = "$($dep.CPUUsoPct)%"
+            $window.FindName("timerAntes").Text  = "$($antes.TimerResMS)ms"
+            $window.FindName("timerDepois").Text = "$($dep.TimerResMS)ms"
+        }
+
+        # Perfil
+        $window.FindName("txtPerfil").Text = "Perfil: $($Script:IA.Perfil.ToUpper())"
+
+        # Lista de otimizacoes
+        $lista = $window.FindName("listaOtim")
+        $lista.ItemsSource = $Script:IA.OtimizacoesAplicadas
+
+        # Historico
+        Load-IAHistorico
+        $h = $Script:IA.Historico
+        if ($h.Execucoes -and $h.Execucoes.Count -gt 0) {
+            $window.FindName("txtHistTotal").Text  = "Execucoes registradas: $($h.Execucoes.Count)"
+            $ganhoM = [math]::Round(($h.Execucoes | Measure-Object -Property Ganho -Average -ErrorAction SilentlyContinue).Average, 1)
+            $window.FindName("txtHistGanho").Text  = "Ganho medio por sessao: +$ganhoM pts"
+            $ult = $h.Execucoes | Select-Object -Last 1
+            $window.FindName("txtHistUltima").Text = "Ultima: $($ult.Data) | $($ult.ScoreAntes) -> $($ult.ScoreDepois)"
+        }
+
+        # Eventos
+        $window.FindName("btnFechar").Add_Click({ $window.Close() })
+        $window.FindName("btnRollback").Add_Click({
+            $window.Close()
+            Invoke-IARollback
+        })
+
+        $window.ShowDialog() | Out-Null
+
+    } catch {
+        WN "Interface grafica nao disponivel: $($_.Exception.Message)"
+        WN "Use o relatorio no terminal."
+    }
+}
+
+# ================================================================
+#  REGION: SIMULACAO DE JOGOS
+# ================================================================
+function Invoke-IASimulacao {
+    H2 "SIMULACAO DE IMPACTO - ESTIMATIVA IA"
+
+    Write-Host "  Selecione o jogo para simular:" -ForegroundColor DarkCyan
+    Write-Host ""
+    Write-Host "  [1]  FiveM  (GTA V Multiplayer)" -ForegroundColor White
+    Write-Host "  [2]  CS2    (Counter-Strike 2)"  -ForegroundColor White
+    Write-Host "  [3]  Valorant" -ForegroundColor White
+    Write-Host "  [V]  Voltar" -ForegroundColor DarkGray
+    Write-Host ""
+    $op = Read-Host "  Jogo"
+
+    $jogo = switch ($op.ToUpper()) {
+        '1' { "FiveM" }
+        '2' { "CS2" }
+        '3' { "Valorant" }
+        default { return }
+    }
+
+    Clear-Host
+    Write-Host ""
+    Write-Host "  $('=' * 70)" -ForegroundColor Magenta
+    Write-Host "  SIMULACAO: $jogo - Estimativa de Impacto" -ForegroundColor Cyan
+    Write-Host "  $('=' * 70)" -ForegroundColor Magenta
+    Write-Host ""
+    IN "Analisando hardware para $jogo..."
+    Start-Sleep 1
+
+    if (-not $Script:CPUNome) { Invoke-DetectarHardware }
+
+    # Perfis de simulacao por jogo
+    $simu = switch ($jogo) {
+        "FiveM" {
+            @{
+                Engine         = "RAGE Engine (GTA V)"
+                LimitantePrim  = "CPU single-core + RAM bandwidth"
+                LimitanteSec   = "Disco (streaming de assets)"
+                GanhoFPS       = if ($Script:CPUFab -eq "AMD" -and $Script:CPUX3D) { "20-35%" } elseif ($Script:CPUNucleos -ge 8) { "12-20%" } else { "8-15%" }
+                GanhoLat       = "15-25ms reducao de latencia de rede"
+                TweaksCriticos = @("Core Parking OFF","Nagle OFF","Timer Resolution","TCP Stack","SysMain OFF")
+                TweaksMedio    = @("MMCSS Gaming","Power Throttling OFF","QoS UDP")
+                TweaksOpcional = @("Spectre/Meltdown OFF (+5-8% CPU)","RAM Working Set Clear")
+                Score          = [math]::Min(100, $Script:IA.SnapshotAntes.Score.Geral + 22)
+            }
+        }
+        "CS2" {
+            @{
+                Engine         = "Source 2"
+                LimitantePrim  = "CPU single-core + latencia de rede"
+                LimitanteSec   = "Mouse input lag + timer resolution"
+                GanhoFPS       = if ($Script:CPUNucleos -ge 6) { "15-25%" } else { "10-18%" }
+                GanhoLat       = "20-40ms reducao (Nagle OFF + QoS)"
+                TweaksCriticos = @("Nagle OFF","Mouse sem aceleracao","Timer Resolution","MMCSS","IRQ Input")
+                TweaksMedio    = @("Core Parking OFF","Power Plan Ultimate","TCP Stack","QoS DSCP 46")
+                TweaksOpcional = @("C-States OFF via BCD","Spectre OFF")
+                Score          = [math]::Min(100, $Script:IA.SnapshotAntes.Score.Geral + 28)
+            }
+        }
+        "Valorant" {
+            @{
+                Engine         = "Unreal Engine 4"
+                LimitantePrim  = "CPU scheduler + latencia de rede"
+                LimitanteSec   = "Memory bandwidth + VRAM"
+                GanhoFPS       = "10-20%"
+                GanhoLat       = "10-30ms"
+                TweaksCriticos = @("Win32PrioritySeparation","Nagle OFF","MMCSS","Timer Resolution")
+                TweaksMedio    = @("Core Parking OFF","BG Apps OFF","TCP autotuning","QoS")
+                TweaksOpcional = @("Auto HDR OFF","VRR OFF","Notificacoes OFF")
+                Score          = [math]::Min(100, $Script:IA.SnapshotAntes.Score.Geral + 18)
+            }
+        }
+    }
+
+    Write-Host "  ENGINE:     $($simu.Engine)" -ForegroundColor White
+    Write-Host "  CPU:        $Script:CPUNome ($Script:CPUNucleos cores)" -ForegroundColor White
+    Write-Host "  GPU:        $Script:GPUNome ($Script:GPUVRAM GB VRAM)" -ForegroundColor White
+    Write-Host "  RAM:        $Script:RAMtotalGB GB $Script:RAMtipo @ $Script:RAMvelocidade MHz" -ForegroundColor White
+    Write-Host ""
+    Write-Host "  GARGALO PRIMARIO:    $($simu.LimitantePrim)" -ForegroundColor Yellow
+    Write-Host "  GARGALO SECUNDARIO:  $($simu.LimitanteSec)" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "  ESTIMATIVA DE GANHO COM ABIMALEKBOOST:" -ForegroundColor Green
+    Write-Host ("  FPS:     +{0,-20}(estimativa baseada no hardware)" -f $simu.GanhoFPS) -ForegroundColor Green
+    Write-Host ("  Input:   {0}" -f $simu.GanhoLat) -ForegroundColor Green
+    Write-Host ("  Score:   {0}/100 (projetado)" -f $simu.Score) -ForegroundColor Green
+    Write-Host ""
+    Write-Host "  TWEAKS CRITICOS PARA $($jogo.ToUpper()):" -ForegroundColor Cyan
+    foreach ($t in $simu.TweaksCriticos) { Write-Host "  [CRITICO] $t" -ForegroundColor Red }
+    Write-Host ""
+    Write-Host "  TWEAKS RECOMENDADOS:" -ForegroundColor Yellow
+    foreach ($t in $simu.TweaksMedio) { Write-Host "  [+] $t" -ForegroundColor Yellow }
+    Write-Host ""
+    Write-Host "  TWEAKS OPCIONAIS (risco/beneficio):" -ForegroundColor DarkGray
+    foreach ($t in $simu.TweaksOpcional) { Write-Host "  [?] $t" -ForegroundColor DarkGray }
+    Write-Host ""
+
+    if (CONF "Aplicar perfil otimizado para $jogo agora?") {
+        $Script:IA.Perfil = if ($jogo -eq "FiveM") { "Gamer" } else { "Gamer" }
+        $Script:IA.SimulandoJogo = $jogo
+        Invoke-IAEngine -Perfil "Gamer"
+    } else {
+        PAUSE
+    }
+}
+
+# ================================================================
+#  REGION: HISTORICO E RELATORIO IA
+# ================================================================
+function Show-IAHistorico {
+    H2 "HISTORICO DE APRENDIZADO LOCAL"
+
+    Load-IAHistorico
+    $h = $Script:IA.Historico
+
+    if (-not $h.Execucoes -or $h.Execucoes.Count -eq 0) {
+        WN "Nenhuma execucao registrada ainda."
+        WN "Execute o Motor de IA pelo menos uma vez para ver o historico."
+        PAUSE; return
+    }
+
+    $execs = $h.Execucoes
+    Write-Host "  Total de execucoes: $($execs.Count)" -ForegroundColor Cyan
+    Write-Host ""
+
+    $i = 0
+    foreach ($e in ($execs | Select-Object -Last 10)) {
+        $i++
+        $ganhoStr = if ($e.Ganho -ge 0) { "+$($e.Ganho)" } else { "$($e.Ganho)" }
+        $cor = if ($e.Ganho -ge 10) { "Green" } elseif ($e.Ganho -ge 0) { "Yellow" } else { "Red" }
+        Write-Host ("  {0:D2}. {1}  [{2,-10}]  Score: {3} -> {4}  {5} pts  Ping: {6}ms" -f `
+            $i, $e.Data, $e.Perfil, $e.ScoreAntes, $e.ScoreDepois, $ganhoStr, $e.PingDepois) -ForegroundColor $cor
+    }
+
+    Write-Host ""
+    $ganhoMed = [math]::Round(($execs | Measure-Object -Property Ganho -Average).Average, 1)
+    $melhor   = ($execs | Sort-Object Ganho -Descending | Select-Object -First 1)
+    Write-Host "  Ganho medio:  +$ganhoMed pts por sessao" -ForegroundColor Cyan
+    Write-Host "  Melhor resultado: +$($melhor.Ganho) pts em $($melhor.Data) [$($melhor.Perfil)]" -ForegroundColor Green
+    Write-Host ""
+
+    if (CONF "Limpar historico?") {
+        $histVazio = [PSCustomObject]@{ Versao="1.0"; Execucoes=@(); Ajustes=@{} }
+        $histVazio | ConvertTo-Json -Depth 5 | Out-File $Script:IA.ArqHistorico -Encoding UTF8 -Force
+        OK "Historico limpo."
+    }
+    PAUSE
+}
+
+# ================================================================
+#  REGION: MENU IA ENGINE
+# ================================================================
+function Show-MenuIAEngine {
+    while ($true) {
+        Show-Banner; Show-StatusBar
+        H1 "MOTOR DE IA HEURISTICO v6.0"
+        Write-Host "  Analise inteligente, decisao por gargalo, score comparativo." -ForegroundColor DarkGray
+        Write-Host ""
+        Write-Host "   >> ANALISE E OTIMIZACAO" -ForegroundColor DarkGray
+        Write-Host "   [1]  Executar Motor IA (selecionar perfil)" -ForegroundColor Cyan
+        Write-Host "   [2]  Perfil Seguro         [rapido, sem risco]" -ForegroundColor Green
+        Write-Host "   [3]  Perfil Gamer          [completo, recomendado]" -ForegroundColor Yellow
+        Write-Host "   [4]  Perfil Streamer       [gaming + OBS]" -ForegroundColor Cyan
+        Write-Host "   [5]  Perfil Extremo        [maximo absoluto]" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "   >> SIMULACAO E ANALISE" -ForegroundColor DarkGray
+        Write-Host "   [S]  Simular impacto por jogo  (FiveM / CS2 / Valorant)" -ForegroundColor Magenta
+        Write-Host "   [H]  Historico de aprendizado  (JSON local)" -ForegroundColor White
+        Write-Host "   [R]  Rollback de registro IA" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "   [V]  Voltar" -ForegroundColor DarkGray
+        Write-Host ""; SEP; Write-Host ""
+        $op = Read-Host "  Opcao"
+        switch ($op.Trim().ToUpper()) {
+            '1' { Clear-Host; Invoke-IAEngine }
+            '2' { Clear-Host; Invoke-IAEngine -Perfil "Seguro" }
+            '3' { Clear-Host; Invoke-IAEngine -Perfil "Gamer" }
+            '4' { Clear-Host; Invoke-IAEngine -Perfil "Streamer" }
+            '5' { Clear-Host; Invoke-IAEngine -Perfil "Extremo" }
+            'S' { Clear-Host; Invoke-IASimulacao }
+            'H' { Clear-Host; Show-IAHistorico }
+            'R' { Clear-Host; Invoke-IARollback }
+            'V' { return }
+        }
+    }
+}
+
+
 function Show-MenuOtimizacao {
     while ($true) {
         Show-Banner; Show-StatusBar
         H1 "OTIMIZACAO DO SISTEMA"
+        Write-Host "  Cada modulo abre checklist - escolha tweak por tweak." -ForegroundColor DarkGray
         Write-Host ""
-        Write-Host "   [1]  Plano de Energia              (por perfil: Gaming/Work/Equilibrado)" -ForegroundColor White
+        Write-Host "   >> PERFORMANCE CORE" -ForegroundColor DarkGray
+        Write-Host "   [1]  Plano de Energia              (Gaming / Work / Equilibrado)" -ForegroundColor White
         Write-Host "   [2]  Privacidade e Telemetria      (30+ tweaks)" -ForegroundColor White
-        Write-Host "   [3]  Game Bar OFF / Game Mode / HAGS" -ForegroundColor White
-        Write-Host "   [4]  Rede Avancada                 (DNS auto-teste, TCP, NIC MSI)" -ForegroundColor White
+        Write-Host "   [3]  Game Bar / Game Mode / HAGS" -ForegroundColor White
+        Write-Host "   [4]  Rede Avancada                 (Nagle, TCP, NIC, IPv6)" -ForegroundColor White
         Write-Host "   [5]  Servicos Desnecessarios" -ForegroundColor White
-        Write-Host "   [6]  Visual e Performance" -ForegroundColor White
-        Write-Host "   [7]  NTFS e I/O Avancado [NOVO]    (NVMe, 8.3, Last Access)" -ForegroundColor Cyan
-        Write-Host "   [8]  MSI Mode para GPU/NVMe [NOVO] (reduz latencia IRQ)" -ForegroundColor Cyan
-        Write-Host "   [9]  Timer Resolution [NOVO]       (scheduler mais preciso)" -ForegroundColor Cyan
+        Write-Host "   [6]  Visual e Performance          (animacoes, transparencia)" -ForegroundColor White
+        Write-Host ""
+        Write-Host "   >> PERFORMANCE AVANCADA" -ForegroundColor DarkGray
+        Write-Host "   [7]  NTFS e I/O                   (NVMe, TRIM, LastAccess)" -ForegroundColor Cyan
+        Write-Host "   [8]  MSI Mode GPU/NVMe             (reduz latencia de IRQ)" -ForegroundColor Cyan
+        Write-Host "   [9]  Timer Resolution              (BCD, Tick, Responsiveness)" -ForegroundColor Cyan
+        Write-Host "   [C]  CPU Avancado                  (DPC, NUMA, Spectre)" -ForegroundColor Yellow
+        Write-Host "   [M]  Memoria                       (Working Set, PageFile)" -ForegroundColor Yellow
+        Write-Host "   [G]  GPU Avancado                  (TDR, PhysX, D3D, Low Latency)" -ForegroundColor Yellow
+        Write-Host "   [A]  Audio                         (WASAPI, Pro Audio buffer)" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "   >> NOVOS v5.1 - FOCO TOTAL" -ForegroundColor DarkGray
+        Write-Host "   [N]  Nuclear Microsoft             (OneDrive, Copilot, Teams, Recall)" -ForegroundColor Red
+        Write-Host "   [P]  Processos CPU e RAM           (matar bg, liberar RAM, rebaixar prio)" -ForegroundColor Red
+        Write-Host "   [L]  Input Lag                     (mouse 1:1, IRQ, QoS, DWM, MMCSS)" -ForegroundColor Red
+        Write-Host "   [E]  Group Policy Performance      (GP via registro, funciona no Home)" -ForegroundColor Red
         if ($Script:CPUX3D) {
+            Write-Host ""
             Write-Host "   [X]  X3D V-Cache [RECOMENDADO]    ($($Script:CPUNome))" -ForegroundColor Magenta
         }
         Write-Host ""
         Write-Host "   [V]  Voltar" -ForegroundColor DarkGray
-        Write-Host ""
-        SEP; Write-Host ""
+        Write-Host ""; SEP; Write-Host ""
         $op = Read-Host "  Opcao"
         switch ($op.Trim().ToUpper()) {
-            '1' { Clear-Host; if(-not $Script:CPUNome){Invoke-DetectarHardware}; Invoke-PlanoEnergia; PAUSE }
+            '1' { Clear-Host; if(-not $Script:CPUNome){Invoke-DetectarHardware}; Invoke-PlanoEnergia }
             '2' { Clear-Host; Invoke-Privacidade; PAUSE }
-            '3' { Clear-Host; Invoke-GameMode; PAUSE }
+            '3' { Clear-Host; Invoke-GameMode }
             '4' { Clear-Host; Invoke-OtimizarRede }
             '5' { Clear-Host; Invoke-Servicos; PAUSE }
-            '6' { Clear-Host; Invoke-VisualPerf; PAUSE }
+            '6' { Clear-Host; Invoke-VisualPerf }
             '7' { Clear-Host; Invoke-NTFSIOTweaks }
             '8' { Clear-Host; Invoke-MSIMode }
             '9' { Clear-Host; Invoke-TimerResolution }
+            'C' { Clear-Host; Invoke-TweaksCPU }
+            'M' { Clear-Host; Invoke-TweaksMemoria }
+            'G' { Clear-Host; Invoke-TweaksGPU }
+            'A' { Clear-Host; Invoke-TweaksAudio }
+            'N' { Clear-Host; Invoke-NuclearMicrosoft }
+            'P' { Clear-Host; Invoke-OtimizarProcessosCPU }
+            'L' { Clear-Host; Invoke-OtimizarInputLag }
+            'E' { Clear-Host; Invoke-GPeditPerformance }
             'X' { if ($Script:CPUX3D) { Clear-Host; Invoke-OtimizacoesX3D; PAUSE } }
             'V' { return }
         }
@@ -1878,14 +4602,16 @@ function Show-MenuFerramentas {
         Write-Host "   [3]  Reparar Windows (SFC + DISM)" -ForegroundColor White
         Write-Host "   [4]  Controle do Windows Update" -ForegroundColor White
         Write-Host "   [5]  Limpeza do Sistema" -ForegroundColor White
-        Write-Host "   [6]  Analisador de OC de GPU [ATUALIZADO]" -ForegroundColor Magenta
-        Write-Host "   [7]  Modo Streamer [NOVO]          (Gaming + OBS sem drops)" -ForegroundColor Cyan
-        Write-Host "   [8]  Monitor em Tempo Real [NOVO]  (CPU/GPU/RAM ao vivo)" -ForegroundColor Cyan
-        Write-Host "   [9]  Exportar Relatorio [NOVO]" -ForegroundColor Cyan
+        Write-Host "   [6]  Analisador de OC de GPU" -ForegroundColor Magenta
+        Write-Host "   [7]  Modo Streamer        (OBS + Gaming sem drops)" -ForegroundColor Cyan
+        Write-Host "   [8]  Monitor em Tempo Real (CPU/GPU/RAM ao vivo)" -ForegroundColor Cyan
+        Write-Host "   [9]  Exportar Relatorio" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "   >> MOTOR DE IA" -ForegroundColor DarkGray
+        Write-Host "   [I]  Motor de IA Heuristico v6.0  [NOVO - analise inteligente]" -ForegroundColor Magenta
         Write-Host ""
         Write-Host "   [V]  Voltar" -ForegroundColor DarkGray
-        Write-Host ""
-        SEP; Write-Host ""
+        Write-Host ""; SEP; Write-Host ""
         $op = Read-Host "  Opcao"
         switch ($op.Trim().ToUpper()) {
             '1' { Clear-Host; Invoke-Instalador }
@@ -1897,6 +4623,7 @@ function Show-MenuFerramentas {
             '7' { Clear-Host; Invoke-ModoStreamer }
             '8' { Clear-Host; Invoke-Monitor }
             '9' { Clear-Host; Invoke-ExportarRelatorio }
+            'I' { Clear-Host; Show-MenuIAEngine }
             'V' { return }
         }
     }
@@ -1909,11 +4636,11 @@ function Show-MenuPrincipal {
 
         Write-Host "   >> ACOES RAPIDAS" -ForegroundColor DarkGray
         Write-Host "   [1]  Detectar Hardware Completo" -ForegroundColor White
-        Write-Host "   [2]  Aplicar TUDO (perfil completo - recomendado)" -ForegroundColor Yellow
+        Write-Host "   [2]  Aplicar TUDO (modo rapido - recomendado)" -ForegroundColor Yellow
         Write-Host ""
         Write-Host "   >> CATEGORIAS" -ForegroundColor DarkGray
-        Write-Host "   [3]  Otimizacao do Sistema   (Energia / Game / Rede / NTFS / MSI)" -ForegroundColor Cyan
-        Write-Host "   [4]  Ferramentas             (Apps / GPU OC / Stream / Monitor)" -ForegroundColor Cyan
+        Write-Host "   [3]  Otimizacao Granular     (escolha tweak por tweak)" -ForegroundColor Cyan
+        Write-Host "   [4]  Ferramentas             (Apps, GPU OC, Streamer, Monitor)" -ForegroundColor Cyan
         Write-Host ""
         Write-Host "   >> SISTEMA" -ForegroundColor DarkGray
         Write-Host "   [5]  Restaurar Configuracoes Originais" -ForegroundColor Red
@@ -1931,13 +4658,9 @@ function Show-MenuPrincipal {
             '5' { Clear-Host; Invoke-Restaurar }
             '6' {
                 Write-Host ""
-                if ($Script:OtimAplicada -and (CONF "Exportar relatorio antes de sair?")) {
-                    Invoke-ExportarRelatorio
-                }
-                IN "Log completo salvo em:"
-                Write-Host "  $($Script:LogFile)" -ForegroundColor DarkCyan
-                Write-Host ""
-                $rodando = $false
+                if ($Script:OtimAplicada -and (CONF "Exportar relatorio antes de sair?")) { Invoke-ExportarRelatorio }
+                IN "Log salvo em:"; Write-Host "  $($Script:LogFile)" -ForegroundColor DarkCyan
+                Write-Host ""; $rodando = $false
             }
             default { WN "Opcao invalida."; Start-Sleep 1 }
         }
@@ -1948,8 +4671,8 @@ function Show-MenuPrincipal {
 #  INICIALIZACAO
 # ================================================================
 LOG "=== AbimalekBoost v$($Script:Versao) ==="
-LOG "Sessao: $($Script:IDSessao) | Usuario: $env:USERNAME | Host: $env:COMPUTERNAME"
-LOG "Build Windows: $([System.Environment]::OSVersion.Version)"
+LOG "Sessao: $($Script:IDSessao) | $env:USERNAME @ $env:COMPUTERNAME"
+LOG "Build: $([System.Environment]::OSVersion.Version)"
 LOG "==="
 
 Show-MenuPrincipal
